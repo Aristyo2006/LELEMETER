@@ -13,7 +13,7 @@ A simple **smartphone light meter** built with **Flutter** that measures ambient
 This project aims to turn a smartphone into a **portable light meter** for photographers and filmmakers.
 
 ---
-##Dial Mode Ui
+Dial Mode Ui
 <table>
 <tr>
 <td align="center">
@@ -25,7 +25,8 @@ This project aims to turn a smartphone into a **portable light meter** for photo
 </td>
 </tr>
 </table>
-##Simple Mode Ui
+
+Simple Mode Ui
 <table>
 <tr>
 <td align="center">
