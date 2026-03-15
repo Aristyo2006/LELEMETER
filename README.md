@@ -10,12 +10,17 @@ A simple **smartphone light meter** built with **Flutter** that measures ambient
 This project aims to turn a smartphone into a **portable light meter** for photographers and filmmakers.
 
 ---
-<p align="center">
-  <img src="assets/readme/d.png" width="350">
-</p>
-<p align="center">
-  <img src="assets/readme/l.png" width="350">
-</p>
+<table>
+<tr>
+<td align="center">
+<img src="assets/readme/d.png" width="350">
+</td>
+
+<td align="center">
+<img src="assets/readme/l.png" width="350">
+</td>
+</tr>
+</table>
 
 
 ## ✨ Features
@@ -28,7 +33,7 @@ This project aims to turn a smartphone into a **portable light meter** for photo
   * Aperture (f-stop) selection
 * 📊 Exposure Value (**EV**) calculation
 * ⚡ Real-time light measurement updates
-* 📱 Simple and minimal UI designed for photographers
+* 📱 Toggleable Simple and Dial UI
 
 ---
 
@@ -100,7 +105,7 @@ flutter run
 
 ## 📱 Requirements
 
-* Android device with **Ambient Light Sensor**
+* Any Android device with **Ambient Light Sensor**
 * Flutter SDK installed
 
 ---
@@ -108,10 +113,7 @@ flutter run
 ## 🎯 Future Improvements
 
 * Histogram
-* False Color exposure
-* Cine mode (180° shutter rule)
 * ND filter compensation
-* Exposure lock
 * Better UI for the exposure triangle
 
 
