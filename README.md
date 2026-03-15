@@ -108,18 +108,9 @@ flutter run
 * Exposure lock
 * Better UI for the exposure triangle
 
----
-
-## 👨‍💻 Author
-
-**Aristyo RS**
-
-GitHub:
-https://github.com/Aristyo2006
 
 ---
 
 ## 📜 License
 
 This project is open source and available under the **MIT License**.
->>>>>>> e920c846b82763612c69a948fcc5e156c2ef473b
