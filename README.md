@@ -1,3 +1,9 @@
+![Flutter](https://img.shields.io/badge/Flutter-Framework-blue)
+![Platform](https://img.shields.io/badge/Platform-Android-green)
+![License](https://img.shields.io/badge/License-MIT-orange)
+
+
+
 # 📸 LELEMETER
 
 A simple **smartphone light meter** built with **Flutter** that measures ambient light using the device's **lux sensor** and converts it into useful exposure information for photography.
