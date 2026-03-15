@@ -2,20 +2,28 @@
 ![Platform](https://img.shields.io/badge/Platform-Android-green)
 ![License](https://img.shields.io/badge/License-MIT-orange)
 
+<p align="center">
+  <img src="assets/logo.png" width="120">
+</p>
 
-# 📸 LELEMETER
+<h1 align="center">LELEMETER</h1>
 
 A simple **smartphone light meter** built with **Flutter** that measures ambient light using the device's **lux sensor** and converts it into useful exposure information for photography.
 
 This project aims to turn a smartphone into a **portable light meter** for photographers and filmmakers.
 
 ---
-<p align="center">
-  <img src="assets/readme/d.png" width="350">
-</p>
-<p align="center">
-  <img src="assets/readme/l.png" width="350">
-</p>
+<table>
+<tr>
+<td align="center">
+<img src="assets/readme/d.png" width="350">
+</td>
+
+<td align="center">
+<img src="assets/readme/l.png" width="350">
+</td>
+</tr>
+</table>
 
 
 ## ✨ Features
@@ -28,7 +36,7 @@ This project aims to turn a smartphone into a **portable light meter** for photo
   * Aperture (f-stop) selection
 * 📊 Exposure Value (**EV**) calculation
 * ⚡ Real-time light measurement updates
-* 📱 Simple and minimal UI designed for photographers
+* 📱 Toggleable Simple and Dial UI
 
 ---
 
@@ -100,7 +108,7 @@ flutter run
 
 ## 📱 Requirements
 
-* Android device with **Ambient Light Sensor**
+* Any Android device with **Ambient Light Sensor**
 * Flutter SDK installed
 
 ---
@@ -108,10 +116,7 @@ flutter run
 ## 🎯 Future Improvements
 
 * Histogram
-* False Color exposure
-* Cine mode (180° shutter rule)
 * ND filter compensation
-* Exposure lock
 * Better UI for the exposure triangle
 
 
