@@ -6,7 +6,7 @@
   <img src="assets/logo.png" width="120">
 </p>
 
-<h1 align="center">📸 LELEMETER</h1>
+<h1 align="center">LELEMETER</h1>
 
 A simple **smartphone light meter** built with **Flutter** that measures ambient light using the device's **lux sensor** and converts it into useful exposure information for photography.
 
