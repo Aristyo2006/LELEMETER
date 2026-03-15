@@ -1,8 +1,8 @@
 ![Flutter](https://img.shields.io/badge/Flutter-Framework-blue)
 ![Platform](https://img.shields.io/badge/Platform-Android-green)
 ![License](https://img.shields.io/badge/License-MIT-orange)
-
-
+![LELEMETER Preview Dark](assets/readme/D.png)
+![LELEMETER Preview Light](assets/readme/L.png)
 
 # 📸 LELEMETER
 
@@ -11,6 +11,13 @@ A simple **smartphone light meter** built with **Flutter** that measures ambient
 This project aims to turn a smartphone into a **portable light meter** for photographers and filmmakers.
 
 ---
+<p align="center">
+  <img src="assets/readme/D.png" width="350">
+</p>
+<p align="center">
+  <img src="assets/readme/L.png" width="350">
+</p>
+
 
 ## ✨ Features
 
