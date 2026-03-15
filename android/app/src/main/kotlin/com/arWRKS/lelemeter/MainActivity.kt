@@ -1,4 +1,4 @@
-package com.example.lightmeter
+package com.arWRKS.lelemeter
 
 import io.flutter.embedding.android.FlutterActivity
 
