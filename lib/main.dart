@@ -37,6 +37,11 @@ class LightMeterApp extends StatelessWidget {
             ),
             textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
             useMaterial3: true,
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+            ),
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
@@ -50,6 +55,11 @@ class LightMeterApp extends StatelessWidget {
             ),
             textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
             useMaterial3: true,
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+            ),
           ),
           home: const SplashScreen(),
           debugShowCheckedModeBanner: false,

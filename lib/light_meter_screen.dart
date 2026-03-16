@@ -631,6 +631,15 @@ class LightMeterScreen extends StatelessWidget {
                               state.toggleBottomBar();
                             },
                           ),
+                          SwitchListTile(
+                            title: const Text('Show Status Bar'),
+                            secondary: const Icon(LucideIcons.maximize),
+                            value: state.showStatusBar,
+                            activeColor: state.primaryColor,
+                            onChanged: (val) {
+                              state.toggleStatusBar();
+                            },
+                          ),
                         ],
                       ),
                       const Divider(height: 32),
