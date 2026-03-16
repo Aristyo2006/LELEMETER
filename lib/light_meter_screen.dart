@@ -535,36 +535,71 @@ class LightMeterScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: OutlinedButton.icon(
-                          onPressed: () => _showColorPicker(context, state),
-                          icon: const Icon(LucideIcons.palette, size: 18),
-                          label: const Text('CUSTOMIZE ACCENT COLOR'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Theme.of(context).primaryColor,
-                            side: BorderSide(color: Theme.of(context).primaryColor),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
                       Column(
                         children: [
                           SwitchListTile(
                             title: const Text('Dark Mode'),
                             secondary: const Icon(LucideIcons.moon),
                             value: state.themeMode == ThemeMode.dark,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeColor: state.primaryColor,
                             onChanged: (val) {
                               state.toggleTheme();
                             },
                           ),
+                          if (state.themeMode == ThemeMode.dark)
+                            Column(
+                              children: [
+                                SwitchListTile(
+                                  title: const Text('Pure Black'),
+                                  subtitle: Text(
+                                    'Uses absolute black for OLED screens to save battery and increase contrast.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
+                                    ),
+                                  ),
+                                  secondary: const Icon(LucideIcons.layers),
+                                  value: state.isPureBlack,
+                                  activeColor: state.primaryColor,
+                                  onChanged: (val) {
+                                    state.togglePureBlack();
+                                  },
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 12),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _showColorPicker(context, state),
+                                icon: const Icon(LucideIcons.palette, size: 20, color: Colors.black),
+                                label: const Text(
+                                  'CUSTOMIZE ACCENT COLOR',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: state.primaryColor,
+                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 4,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           SwitchListTile(
                             title: const Text('Haptic Feedback'),
                             secondary: const Icon(LucideIcons.smartphone),
                             value: state.hapticsEnabled,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeColor: state.primaryColor,
                             onChanged: (val) {
                               state.toggleHaptics();
                             },
@@ -573,7 +608,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: const Text('Analog Dial Style'),
                             secondary: const Icon(LucideIcons.mousePointerClick),
                             value: state.useDialUi,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeColor: state.primaryColor,
                             onChanged: (val) {
                               state.toggleDialStyle();
                             },
@@ -582,7 +617,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: const Text('1/2 EV Steps'),
                             secondary: const Icon(LucideIcons.sliders),
                             value: state.useHalfSteps,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeColor: state.primaryColor,
                             onChanged: (val) {
                               state.toggleHalfSteps();
                             },
@@ -591,7 +626,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: const Text('Show FPS Tools Panel'),
                             secondary: const Icon(Icons.arrow_drop_down_circle),
                             value: state.showBottomBar,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeColor: state.primaryColor,
                             onChanged: (val) {
                               state.toggleBottomBar();
                             },
@@ -742,8 +777,11 @@ class LightMeterScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-            child: const Text('APPLY', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: pickerColor,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('APPLY', style: TextStyle(fontWeight: FontWeight.bold)),
             onPressed: () {
               state.setPrimaryColor(pickerColor);
               Navigator.pop(context);

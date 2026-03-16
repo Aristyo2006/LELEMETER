@@ -75,6 +75,9 @@ class ExposureState extends ChangeNotifier {
   bool _showBottomBar = true;
   bool get showBottomBar => _showBottomBar;
 
+  bool _isPureBlack = true;
+  bool get isPureBlack => _isPureBlack;
+
   Color _primaryColor = const Color(0xFFFFB300); // Default Amber
   Color get primaryColor => _primaryColor;
 
@@ -120,6 +123,13 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void togglePureBlack() {
+    _isPureBlack = !_isPureBlack;
+    _prefs.setBool('isPureBlack', _isPureBlack);
+    _triggerHaptic();
+    notifyListeners();
+  }
+
   void setPrimaryColor(Color color) {
     _primaryColor = color;
     _prefs.setInt('primaryColor', color.value);
@@ -154,6 +164,7 @@ class ExposureState extends ChangeNotifier {
     _useDialUi = _prefs.getBool('useDialUi') ?? true;
     _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
     _showBottomBar = _prefs.getBool('showBottomBar') ?? true;
+    _isPureBlack = _prefs.getBool('isPureBlack') ?? true;
     
     _iso = _prefs.getInt('iso') ?? isoValues[2];
     _aperture = _prefs.getDouble('aperture') ?? apertureValues[6];

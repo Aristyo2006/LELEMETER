@@ -40,13 +40,13 @@ class LightMeterApp extends StatelessWidget {
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
-            scaffoldBackgroundColor: Colors.black, // Pure Black
+            scaffoldBackgroundColor: state.isPureBlack ? Colors.black : const Color(0xFF0F0F0F),
             primaryColor: state.primaryColor,
             colorScheme: ColorScheme.dark(
               primary: state.primaryColor,
               secondary: const Color(0xFF03DAC6),
-              surface: Colors.black, // Pure Black
-              surfaceContainer: const Color(0xFF121212), // Subtle contrast for cards
+              surface: state.isPureBlack ? Colors.black : const Color(0xFF1E1E1E),
+              surfaceContainer: state.isPureBlack ? const Color(0xFF121212) : const Color(0xFF242424),
             ),
             textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
             useMaterial3: true,
