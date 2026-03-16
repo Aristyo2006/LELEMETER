@@ -474,17 +474,19 @@ class LightMeterScreen extends StatelessWidget {
   void _showAdvancedSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      builder: (context) => SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const Text(
                 'Settings',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -556,6 +558,7 @@ class LightMeterScreen extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -704,7 +707,10 @@ class _ExposureDialState<T> extends State<_ExposureDial<T>> {
   @override
   void didUpdateWidget(covariant _ExposureDial<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentValue != widget.currentValue) {
+    if (oldWidget.values != widget.values) {
+      _scrollController.dispose();
+      _initController();
+    } else if (oldWidget.currentValue != widget.currentValue) {
       int targetIndex = widget.values.indexOf(widget.currentValue);
       if (targetIndex != -1 && _scrollController.hasClients) {
         if (widget.isTarget || widget.isLockedByVideo) {
