@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'exposure_state.dart';
 import 'exposure_calculator.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
@@ -498,12 +499,23 @@ class LightMeterScreen extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Settings',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).textTheme.bodyLarge?.color),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Settings',
+                            style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                                color: Theme.of(context).textTheme.bodyLarge?.color),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(LucideIcons.x, size: 28),
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
                       ListTile(
@@ -525,28 +537,15 @@ class LightMeterScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'Primary Accent Color',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).primaryColor,
-                            letterSpacing: 1.2,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showColorPicker(context, state),
+                          icon: const Icon(LucideIcons.palette, size: 18),
+                          label: const Text('CUSTOMIZE ACCENT COLOR'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Theme.of(context).primaryColor,
+                            side: BorderSide(color: Theme.of(context).primaryColor),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildColorOption(context, state, const Color(0xFFFFB300), 'Amber'),
-                            _buildColorOption(context, state, const Color(0xFF1DE9B6), 'Teal'),
-                            _buildColorOption(context, state, const Color(0xFF2979FF), 'Blue'),
-                            _buildColorOption(context, state, const Color(0xFFD500F9), 'Purple'),
-                            _buildColorOption(context, state, const Color(0xFFFF1744), 'Red'),
-                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -690,32 +689,7 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildColorOption(BuildContext context, ExposureState state, Color color, String name) {
-    final bool isSelected = state.primaryColor.value == color.value;
-    return GestureDetector(
-      onTap: () => state.setPrimaryColor(color),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isSelected ? Colors.white : Colors.transparent,
-            width: 3,
-          ),
-          boxShadow: isSelected ? [
-            BoxShadow(
-              color: color.withOpacity(0.4),
-              blurRadius: 8,
-              spreadRadius: 2,
-            )
-          ] : null,
-        ),
-        child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
-      ),
-    );
-  }
+
 
   void _showSensorSupportAlert(BuildContext context, ExposureState state) {
     state.markSensorAlertShown();
@@ -740,6 +714,40 @@ class LightMeterScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('I UNDERSTAND', style: TextStyle(color: Colors.amber)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showColorPicker(BuildContext context, ExposureState state) {
+    Color pickerColor = state.primaryColor;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF121212),
+        title: const Text('Pick Accent Color', style: TextStyle(color: Colors.white)),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: pickerColor,
+            onColorChanged: (color) => pickerColor = color,
+            labelTypes: const [ColorLabelType.hex, ColorLabelType.rgb],
+            pickerAreaHeightPercent: 0.8,
+            enableAlpha: false,
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white70)),
+            onPressed: () => Navigator.pop(context),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+            child: const Text('APPLY', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            onPressed: () {
+              state.setPrimaryColor(pickerColor);
+              Navigator.pop(context);
+            },
           ),
         ],
       ),
