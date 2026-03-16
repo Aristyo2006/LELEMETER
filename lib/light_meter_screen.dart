@@ -85,7 +85,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'ISO',
                             target: CalculationTarget.iso,
                             currentValue: state.iso,
-                            values: ExposureCalculator.isoValues,
+                            values: state.isoValues,
                             isTarget: state.target == CalculationTarget.iso,
                             onTargetSelected: () =>
                                 state.setTarget(CalculationTarget.iso),
@@ -97,7 +97,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'ISO',
                             target: CalculationTarget.iso,
                             currentValue: state.iso,
-                            values: ExposureCalculator.isoValues,
+                            values: state.isoValues,
                             isTarget: state.target == CalculationTarget.iso,
                             onTargetSelected: () =>
                                 state.setTarget(CalculationTarget.iso),
@@ -110,7 +110,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'APERTURE',
                             target: CalculationTarget.aperture,
                             currentValue: state.aperture,
-                            values: ExposureCalculator.apertureValues,
+                            values: state.apertureValues,
                             isTarget:
                                 state.target == CalculationTarget.aperture,
                             onTargetSelected: () =>
@@ -124,7 +124,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'APERTURE',
                             target: CalculationTarget.aperture,
                             currentValue: state.aperture,
-                            values: ExposureCalculator.apertureValues,
+                            values: state.apertureValues,
                             isTarget:
                                 state.target == CalculationTarget.aperture,
                             onTargetSelected: () =>
@@ -162,10 +162,35 @@ class LightMeterScreen extends StatelessWidget {
                                 ExposureCalculator.formatShutterSpeed(v),
                             isLockedByVideo: state.fpsOption != null,
                           ),
+                    const SizedBox(height: 24),
+                    state.useDialUi
+                        ? _ExposureDial<NdFilter>(
+                            title: 'ND FILTER',
+                            target: CalculationTarget.shutter, // Ignore
+                            currentValue: state.ndFilter,
+                            values: NdFilter.values,
+                            isTarget: false,
+                            onTargetSelected: () {}, // Ignore
+                            onValueChanged: (val) => state.setNdFilter(val),
+                            formatValue: (v) => v.label,
+                            showTargetToggle: false,
+                          )
+                        : _buildExposureParameter(
+                            context: context,
+                            title: 'ND FILTER',
+                            target: CalculationTarget.shutter, // Ignore
+                            currentValue: state.ndFilter,
+                            values: NdFilter.values,
+                            isTarget: false,
+                            onTargetSelected: () {}, // Ignore
+                            onValueChanged: (val) => state.setNdFilter(val),
+                            formatValue: (v) => v.label,
+                            showTargetToggle: false,
+                          ),
                   ],
                 ),
               ),
-              _buildToolsSection(context, state),
+              if (state.showBottomBar) _buildToolsSection(context, state),
             ],
           );
         },
@@ -511,6 +536,15 @@ class LightMeterScreen extends StatelessWidget {
                         activeColor: Theme.of(context).primaryColor,
                         onChanged: (val) {
                           state.toggleHalfSteps();
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('Show FPS Tools Panel'),
+                        secondary: const Icon(Icons.arrow_drop_down_circle),
+                        value: state.showBottomBar,
+                        activeColor: Theme.of(context).primaryColor,
+                        onChanged: (val) {
+                          state.toggleBottomBar();
                         },
                       ),
                     ],

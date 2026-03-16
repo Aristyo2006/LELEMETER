@@ -60,6 +60,9 @@ class ExposureState extends ChangeNotifier {
   bool _useHalfSteps = false;
   bool get useHalfSteps => _useHalfSteps;
 
+  bool _showBottomBar = true;
+  bool get showBottomBar => _showBottomBar;
+
   void toggleTheme() {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     _prefs.setBool('isDarkMode', _themeMode == ThemeMode.dark);
@@ -95,6 +98,13 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleBottomBar() {
+    _showBottomBar = !_showBottomBar;
+    _prefs.setBool('showBottomBar', _showBottomBar);
+    _triggerHaptic();
+    notifyListeners();
+  }
+
   List<int> get isoValues => _useHalfSteps ? ExposureCalculator.isoValuesHalf : ExposureCalculator.isoValues;
   List<double> get apertureValues => _useHalfSteps ? ExposureCalculator.apertureValuesHalf : ExposureCalculator.apertureValues;
   List<double> get shutterValues => _useHalfSteps ? ExposureCalculator.shutterValuesHalf : ExposureCalculator.shutterValues;
@@ -121,6 +131,7 @@ class ExposureState extends ChangeNotifier {
     _hapticsEnabled = _prefs.getBool('hapticsEnabled') ?? true;
     _useDialUi = _prefs.getBool('useDialUi') ?? true;
     _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
+    _showBottomBar = _prefs.getBool('showBottomBar') ?? true;
     
     _iso = _prefs.getInt('iso') ?? isoValues[2];
     _aperture = _prefs.getDouble('aperture') ?? apertureValues[6];
