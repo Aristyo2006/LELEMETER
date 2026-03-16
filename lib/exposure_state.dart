@@ -31,7 +31,10 @@ class ExposureState extends ChangeNotifier {
   bool _isLocked = false;
   bool get isLocked => _isLocked;
 
-  double get effectiveLux => _isLocked ? _lockedLux : _currentLux;
+  double _calibrationFactor = 1.0;
+  double get calibrationFactor => _calibrationFactor;
+
+  double get effectiveLux => (_isLocked ? _lockedLux : _currentLux) * _calibrationFactor;
 
   // Settings
   int _iso = ExposureCalculator.isoValues[2]; // 160
@@ -156,6 +159,13 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setCalibrationFactor(double factor) {
+    _calibrationFactor = factor;
+    _prefs.setDouble('calibrationFactor', factor);
+    _recalculate();
+    notifyListeners();
+  }
+
   List<int> get isoValues => _useHalfSteps ? ExposureCalculator.isoValuesHalf : ExposureCalculator.isoValues;
   List<double> get apertureValues => _useHalfSteps ? ExposureCalculator.apertureValuesHalf : ExposureCalculator.apertureValues;
   List<double> get shutterValues => _useHalfSteps ? ExposureCalculator.shutterValuesHalf : ExposureCalculator.shutterValues;
@@ -199,6 +209,15 @@ class ExposureState extends ChangeNotifier {
 
     int colorValue = _prefs.getInt('primaryColor') ?? const Color(0xFFFFB300).value;
     _primaryColor = Color(colorValue);
+
+    _calibrationFactor = _prefs.getDouble('calibrationFactor') ?? 1.0;
+
+    String fpsStr = _prefs.getString('fpsOption') ?? '';
+    if (fpsStr.isNotEmpty) {
+      _fpsOption = FpsOption.values.firstWhere((e) => e.name == fpsStr, orElse: () => FpsOption.fps24);
+      _shutterSpeed = _fpsOption!.shutterSpeed;
+      if (_target == CalculationTarget.shutter) _target = CalculationTarget.iso;
+    }
 
     _isInitialized = true;
     notifyListeners();
@@ -253,6 +272,11 @@ class ExposureState extends ChangeNotifier {
   }
 
   void setTarget(CalculationTarget newTarget) {
+    // Prevent switching to shutter target if FPS lock is active
+    if (_fpsOption != null && newTarget == CalculationTarget.shutter) {
+      return;
+    }
+    
     if (_target != newTarget) {
       _target = newTarget;
       _prefs.setString('target', newTarget.name);
@@ -315,6 +339,7 @@ class ExposureState extends ChangeNotifier {
   void setFpsOption(FpsOption? option) {
     if (_fpsOption != option) {
       _fpsOption = option;
+      _prefs.setString('fpsOption', option?.name ?? '');
       _triggerHaptic();
       if (option != null) {
         _shutterSpeed = option.shutterSpeed;
@@ -335,8 +360,8 @@ class ExposureState extends ChangeNotifier {
         if (_fpsOption == null) {
           _shutterSpeed = ExposureCalculator.calculateShutterSpeed(effectiveLux, _aperture, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         } else {
-          // If FPS is locked but target is shutter, fallback to calculating ISO
-          setTarget(CalculationTarget.iso);
+          // If FPS is locked but target is shutter (rare edge case), fallback to calculating ISO
+          _target = CalculationTarget.iso;
           _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         }
         break;
