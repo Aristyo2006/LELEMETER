@@ -46,12 +46,24 @@ class ExposureCalculator {
     50, 100, 160, 200, 320, 400, 640, 800, 1250, 1600, 3200, 6400, 12800
   ];
 
+  static const List<int> isoValuesHalf = [
+    50, 75, 100, 150, 200, 300, 400, 600, 800, 1200, 1600, 2400, 3200, 4800, 6400, 9600, 12800
+  ];
+
   static const List<double> apertureValues = [
     1.0, 1.2, 1.4, 1.8, 2.0, 2.5, 2.8, 3.2, 4.0, 4.5, 5.0, 5.6, 6.3, 7.1, 8.0, 9.0, 11.0, 13.0, 16.0, 22.0
   ];
 
+  static const List<double> apertureValuesHalf = [
+    1.0, 1.2, 1.4, 1.7, 2.0, 2.4, 2.8, 3.3, 4.0, 4.8, 5.6, 6.7, 8.0, 9.5, 11.0, 13.0, 16.0, 19.0, 22.0
+  ];
+
   static const List<double> shutterValues = [
     1 / 8000, 1 / 4000, 1 / 2000, 1 / 1000, 1 / 500, 1 / 250, 1 / 125, 1 / 60, 1 / 50, 1 / 48, 1 / 30, 1 / 15, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 15, 30
+  ];
+
+  static const List<double> shutterValuesHalf = [
+    1 / 8000, 1 / 6000, 1 / 4000, 1 / 3000, 1 / 2000, 1 / 1500, 1 / 1000, 1 / 750, 1 / 500, 1 / 350, 1 / 250, 1 / 180, 1 / 125, 1 / 90, 1 / 60, 1 / 45, 1 / 30, 1 / 20, 1 / 15, 1 / 10, 1 / 8, 1 / 6, 1 / 4, 0.3, 0.5, 0.7, 1, 1.5, 2, 3, 4, 6, 8, 12, 15, 24, 30
   ];
 
   /// Format shutter speed for display (e.g., "1/50", "1/4000", or "2s")
@@ -95,34 +107,37 @@ class ExposureCalculator {
   /// Core formula based on: (N^2)/t = (Lux * ISO) / C
   /// Meaning: Target = remaining var
 
-  static double calculateAperture(double lux, double shutterSpeed, int iso, {NdFilter ndFilter = NdFilter.none}) {
-    if (lux <= 0 || shutterSpeed <= 0) return apertureValues.first;
+  static double calculateAperture(double lux, double shutterSpeed, int iso, {NdFilter ndFilter = NdFilter.none, bool halfSteps = false}) {
+    List<double> options = halfSteps ? apertureValuesHalf : apertureValues;
+    if (lux <= 0 || shutterSpeed <= 0) return options.first;
     double effectiveLux = lux / ndFilter.factor;
     
     // N^2 = (Lux * ISO * t) / C
     double nSquared = (effectiveLux * iso * shutterSpeed) / calibrationConstant;
-    if (nSquared <= 0) return apertureValues.first;
+    if (nSquared <= 0) return options.first;
     
     double exactAperture = sqrt(nSquared);
-    return findClosest(exactAperture, apertureValues);
+    return findClosest(exactAperture, options);
   }
 
-  static double calculateShutterSpeed(double lux, double aperture, int iso, {NdFilter ndFilter = NdFilter.none}) {
-    if (lux <= 0) return shutterValues.first;
+  static double calculateShutterSpeed(double lux, double aperture, int iso, {NdFilter ndFilter = NdFilter.none, bool halfSteps = false}) {
+    List<double> options = halfSteps ? shutterValuesHalf : shutterValues;
+    if (lux <= 0) return options.first;
     double effectiveLux = lux / ndFilter.factor;
     
     // t = (N^2 * C) / (Lux * ISO)
     double exactShutter = (aperture * aperture * calibrationConstant) / (effectiveLux * iso);
-    return findClosest(exactShutter, shutterValues);
+    return findClosest(exactShutter, options);
   }
 
-  static int calculateIso(double lux, double aperture, double shutterSpeed, {NdFilter ndFilter = NdFilter.none}) {
-    if (lux <= 0 || shutterSpeed <= 0) return isoValues.first;
+  static int calculateIso(double lux, double aperture, double shutterSpeed, {NdFilter ndFilter = NdFilter.none, bool halfSteps = false}) {
+    List<int> options = halfSteps ? isoValuesHalf : isoValues;
+    if (lux <= 0 || shutterSpeed <= 0) return options.first;
     double effectiveLux = lux / ndFilter.factor;
-    if (effectiveLux <= 0) return isoValues.first;
+    if (effectiveLux <= 0) return options.first;
     
     // ISO = (N^2 * C) / (Lux * t)
     double exactIso = (aperture * aperture * calibrationConstant) / (effectiveLux * shutterSpeed);
-    return findClosest(exactIso, isoValues);
+    return findClosest(exactIso, options);
   }
 }

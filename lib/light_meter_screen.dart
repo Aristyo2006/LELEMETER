@@ -31,6 +31,13 @@ class LightMeterScreen extends StatelessWidget {
       ),
       body: Consumer<ExposureState>(
         builder: (context, state, child) {
+          if (!state.isInitialized) {
+            return const Scaffold(
+              backgroundColor: Colors.black,
+              body: Center(child: CircularProgressIndicator(color: Colors.amber)),
+            );
+          }
+
           if (state.errorMessage.isNotEmpty) {
             return Center(
               child: Padding(
@@ -132,7 +139,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'SHUTTER',
                             target: CalculationTarget.shutter,
                             currentValue: state.shutterSpeed,
-                            values: ExposureCalculator.shutterValues,
+                            values: state.shutterValues,
                             isTarget: state.target == CalculationTarget.shutter,
                             onTargetSelected: () =>
                                 state.setTarget(CalculationTarget.shutter),
@@ -146,7 +153,7 @@ class LightMeterScreen extends StatelessWidget {
                             title: 'SHUTTER',
                             target: CalculationTarget.shutter,
                             currentValue: state.shutterSpeed,
-                            values: ExposureCalculator.shutterValues,
+                            values: state.shutterValues,
                             isTarget: state.target == CalculationTarget.shutter,
                             onTargetSelected: () =>
                                 state.setTarget(CalculationTarget.shutter),
@@ -239,7 +246,7 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildExposureParameter<T extends num>({
+  Widget _buildExposureParameter<T>({
     required BuildContext context,
     required String title,
     required CalculationTarget target,
@@ -250,6 +257,7 @@ class LightMeterScreen extends StatelessWidget {
     required Function(T) onValueChanged,
     required String Function(T) formatValue,
     bool isLockedByVideo = false,
+    bool showTargetToggle = true,
   }) {
     final primary = Theme.of(context).primaryColor;
 
@@ -292,7 +300,7 @@ class LightMeterScreen extends StatelessWidget {
                   ],
                 ),
               )
-            else
+            else if (showTargetToggle)
               GestureDetector(
                 onTap: onTargetSelected,
                 child: AnimatedContainer(
@@ -423,14 +431,7 @@ class LightMeterScreen extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _ToolButton(
-              icon: LucideIcons.contrast,
-              label: state.ndFilter == NdFilter.none
-                  ? 'ND FILTER'
-                  : state.ndFilter.label,
-              isActive: state.ndFilter != NdFilter.none,
-              onTap: () => _showNdFilterDialog(context, state),
-            ),
+            // Only display FPS video tools now, ND Filter is moved to Dial List
             _ToolButton(
               icon: LucideIcons.video,
               label: state.fpsOption == null
@@ -503,6 +504,15 @@ class LightMeterScreen extends StatelessWidget {
                           state.toggleDialStyle();
                         },
                       ),
+                      SwitchListTile(
+                        title: const Text('1/2 EV Steps'),
+                        secondary: const Icon(LucideIcons.sliders),
+                        value: state.useHalfSteps,
+                        activeColor: Theme.of(context).primaryColor,
+                        onChanged: (val) {
+                          state.toggleHalfSteps();
+                        },
+                      ),
                     ],
                   );
                 },
@@ -515,43 +525,7 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  void _showNdFilterDialog(BuildContext context, ExposureState state) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Neutral Density Filter',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                ),
-              ),
-            ),
-            ...NdFilter.values.map((filter) {
-              return ListTile(
-                title: Text(filter.label),
-                trailing: state.ndFilter == filter
-                    ? const Icon(LucideIcons.check, color: Colors.amber)
-                    : null,
-                onTap: () {
-                  state.setNdFilter(filter);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
+  // _showNdFilterDialog removed as it's now a dial
 
   void _showFpsDialog(BuildContext context, ExposureState state) {
     showModalBottomSheet(
@@ -649,7 +623,7 @@ class _ToolButton extends StatelessWidget {
   }
 }
 
-class _ExposureDial<T extends num> extends StatefulWidget {
+class _ExposureDial<T> extends StatefulWidget {
   final String title;
   final CalculationTarget target;
   final T currentValue;
@@ -659,6 +633,7 @@ class _ExposureDial<T extends num> extends StatefulWidget {
   final Function(T) onValueChanged;
   final String Function(T) formatValue;
   final bool isLockedByVideo;
+  final bool showTargetToggle;
 
   const _ExposureDial({
     required this.title,
@@ -670,13 +645,14 @@ class _ExposureDial<T extends num> extends StatefulWidget {
     required this.onValueChanged,
     required this.formatValue,
     this.isLockedByVideo = false,
+    this.showTargetToggle = true,
   });
 
   @override
   State<_ExposureDial<T>> createState() => _ExposureDialState<T>();
 }
 
-class _ExposureDialState<T extends num> extends State<_ExposureDial<T>> {
+class _ExposureDialState<T> extends State<_ExposureDial<T>> {
   late FixedExtentScrollController _scrollController;
 
   @override
@@ -759,7 +735,7 @@ class _ExposureDialState<T extends num> extends State<_ExposureDial<T>> {
                   ],
                 ),
               )
-            else
+            else if (widget.showTargetToggle)
               GestureDetector(
                 onTap: widget.onTargetSelected,
                 child: AnimatedContainer(

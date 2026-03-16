@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:light/light.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'exposure_calculator.dart';
 
 class ExposureState extends ChangeNotifier {
   Light? _light;
   StreamSubscription<int>? _subscription;
+  late SharedPreferences _prefs;
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
 
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
@@ -53,23 +57,47 @@ class ExposureState extends ChangeNotifier {
   bool _useDialUi = true;
   bool get useDialUi => _useDialUi;
 
+  bool _useHalfSteps = false;
+  bool get useHalfSteps => _useHalfSteps;
+
   void toggleTheme() {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    _prefs.setBool('isDarkMode', _themeMode == ThemeMode.dark);
     _triggerHaptic(light: true);
     notifyListeners();
   }
 
   void toggleHaptics() {
     _hapticsEnabled = !_hapticsEnabled;
+    _prefs.setBool('hapticsEnabled', _hapticsEnabled);
     _triggerHaptic();
     notifyListeners();
   }
 
   void toggleDialStyle() {
     _useDialUi = !_useDialUi;
+    _prefs.setBool('useDialUi', _useDialUi);
     _triggerHaptic();
     notifyListeners();
   }
+
+  void toggleHalfSteps() {
+    _useHalfSteps = !_useHalfSteps;
+    _prefs.setBool('useHalfSteps', _useHalfSteps);
+    _triggerHaptic();
+    
+    // Nearest valid value correction logic goes here
+    _iso = ExposureCalculator.findClosest(_iso.toDouble(), isoValues).toInt();
+    _aperture = ExposureCalculator.findClosest(_aperture, apertureValues);
+    _shutterSpeed = ExposureCalculator.findClosest(_shutterSpeed, shutterValues);
+    
+    _recalculate();
+    notifyListeners();
+  }
+
+  List<int> get isoValues => _useHalfSteps ? ExposureCalculator.isoValuesHalf : ExposureCalculator.isoValues;
+  List<double> get apertureValues => _useHalfSteps ? ExposureCalculator.apertureValuesHalf : ExposureCalculator.apertureValues;
+  List<double> get shutterValues => _useHalfSteps ? ExposureCalculator.shutterValuesHalf : ExposureCalculator.shutterValues;
 
   void _triggerHaptic({bool light = false}) {
     if (_hapticsEnabled) {
@@ -82,6 +110,31 @@ class ExposureState extends ChangeNotifier {
   }
 
   ExposureState() {
+    _initPrefsAndSensor();
+  }
+
+  Future<void> _initPrefsAndSensor() async {
+    _prefs = await SharedPreferences.getInstance();
+    
+    // Load saved settings
+    _themeMode = (_prefs.getBool('isDarkMode') ?? true) ? ThemeMode.dark : ThemeMode.light;
+    _hapticsEnabled = _prefs.getBool('hapticsEnabled') ?? true;
+    _useDialUi = _prefs.getBool('useDialUi') ?? true;
+    _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
+    
+    _iso = _prefs.getInt('iso') ?? isoValues[2];
+    _aperture = _prefs.getDouble('aperture') ?? apertureValues[6];
+    _shutterSpeed = _prefs.getDouble('shutterSpeed') ?? shutterValues[10];
+    
+    String targetStr = _prefs.getString('target') ?? 'shutter';
+    _target = CalculationTarget.values.firstWhere((e) => e.name == targetStr, orElse: () => CalculationTarget.shutter);
+    
+    String ndStr = _prefs.getString('ndFilter') ?? 'none';
+    _ndFilter = NdFilter.values.firstWhere((e) => e.name == ndStr, orElse: () => NdFilter.none);
+
+    _isInitialized = true;
+    notifyListeners();
+    
     _initSensor();
   }
 
@@ -117,6 +170,7 @@ class ExposureState extends ChangeNotifier {
   void setTarget(CalculationTarget newTarget) {
     if (_target != newTarget) {
       _target = newTarget;
+      _prefs.setString('target', newTarget.name);
       _triggerHaptic();
       _recalculate();
       notifyListeners();
@@ -126,9 +180,10 @@ class ExposureState extends ChangeNotifier {
   void setIso(int newIso) {
     if (_iso != newIso) {
       _iso = newIso;
+      _prefs.setInt('iso', newIso);
       _triggerHaptic();
       if (_target == CalculationTarget.iso) {
-        _target = CalculationTarget.shutter;
+        setTarget(CalculationTarget.shutter);
       }
       _recalculate();
     }
@@ -138,9 +193,10 @@ class ExposureState extends ChangeNotifier {
   void setAperture(double newAperture) {
     if (_aperture != newAperture) {
       _aperture = newAperture;
+      _prefs.setDouble('aperture', newAperture);
       _triggerHaptic();
       if (_target == CalculationTarget.aperture) {
-        _target = CalculationTarget.shutter;
+        setTarget(CalculationTarget.shutter);
       }
       _recalculate();
     }
@@ -151,9 +207,10 @@ class ExposureState extends ChangeNotifier {
     if (_fpsOption != null) return; // Locked by video mode
     if (_shutterSpeed != newShutter) {
       _shutterSpeed = newShutter;
+      _prefs.setDouble('shutterSpeed', newShutter);
       _triggerHaptic();
       if (_target == CalculationTarget.shutter) {
-        _target = CalculationTarget.iso;
+        setTarget(CalculationTarget.iso);
       }
       _recalculate();
     }
@@ -163,6 +220,7 @@ class ExposureState extends ChangeNotifier {
   void setNdFilter(NdFilter filter) {
     if (_ndFilter != filter) {
       _ndFilter = filter;
+      _prefs.setString('ndFilter', filter.name);
       _triggerHaptic();
       _recalculate();
     }
@@ -190,18 +248,18 @@ class ExposureState extends ChangeNotifier {
     switch (_target) {
       case CalculationTarget.shutter:
         if (_fpsOption == null) {
-          _shutterSpeed = ExposureCalculator.calculateShutterSpeed(effectiveLux, _aperture, _iso, ndFilter: _ndFilter);
+          _shutterSpeed = ExposureCalculator.calculateShutterSpeed(effectiveLux, _aperture, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         } else {
           // If FPS is locked but target is shutter, fallback to calculating ISO
-          _target = CalculationTarget.iso;
-          _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter);
+          setTarget(CalculationTarget.iso);
+          _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         }
         break;
       case CalculationTarget.aperture:
-        _aperture = ExposureCalculator.calculateAperture(effectiveLux, _shutterSpeed, _iso, ndFilter: _ndFilter);
+        _aperture = ExposureCalculator.calculateAperture(effectiveLux, _shutterSpeed, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         break;
       case CalculationTarget.iso:
-        _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter);
+        _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         break;
     }
   }

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'exposure_state.dart';
 import 'splash_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   runApp(
     ChangeNotifierProvider(
-      create: (clightmeteontext) => ExposureState(),
+      create: (context) => ExposureState(),
       child: const LightMeterApp(),
     ),
   );
