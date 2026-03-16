@@ -565,6 +565,57 @@ class LightMeterScreen extends StatelessWidget {
                           ),
                         ],
                       ),
+                      const Divider(height: 32),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Sensor Diagnostics',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDiagnosticRow(
+                              context,
+                              'Status',
+                              state.hasSensor ? 'Hardware Detected' : 'No Hardware Found',
+                              state.hasSensor ? Colors.green : Colors.red,
+                            ),
+                            _buildDiagnosticRow(
+                              context,
+                              'Signal',
+                              state.isListening ? 'Stream Active' : 'Stream Closed',
+                              state.isListening ? Colors.green : Colors.orange,
+                            ),
+                            _buildDiagnosticRow(
+                              context,
+                              'Last Update',
+                              state.lastUpdate != null
+                                  ? '${DateTime.now().difference(state.lastUpdate!).inSeconds}s ago'
+                                  : 'Never',
+                              Colors.white.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(LucideIcons.refreshCw, size: 16),
+                                label: const Text('Reset Light Sensor'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Theme.of(context).primaryColor,
+                                  side: BorderSide(color: Theme.of(context).primaryColor),
+                                ),
+                                onPressed: () => state.reinitializeSensor(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 16),
                     ],
                   ),
@@ -578,6 +629,32 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   // _showNdFilterDialog removed as it's now a dial
+
+  Widget _buildDiagnosticRow(BuildContext context, String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showFpsDialog(BuildContext context, ExposureState state) {
     showModalBottomSheet(

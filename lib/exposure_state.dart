@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:light/light.dart';
+import 'package:ambient_light/ambient_light.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exposure_calculator.dart';
 
 class ExposureState extends ChangeNotifier {
-  Light? _light;
-  StreamSubscription<int>? _subscription;
+  StreamSubscription<double>? _subscription;
+  bool _hasSensor = true;
+  bool get hasSensor => _hasSensor;
+  
+  DateTime? _lastUpdate;
+  DateTime? get lastUpdate => _lastUpdate;
   late SharedPreferences _prefs;
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
@@ -151,10 +155,11 @@ class ExposureState extends ChangeNotifier {
 
   void _initSensor() {
     try {
-      _light = Light();
-      _subscription = _light?.lightSensorStream.listen((int luxValue) {
+      _subscription?.cancel();
+      _subscription = AmbientLight().ambientLightStream.listen((double luxValue) {
         if (!_isLocked) {
-          _currentLux = luxValue.toDouble();
+          _currentLux = luxValue;
+          _lastUpdate = DateTime.now();
           _recalculate();
           notifyListeners();
         }
@@ -163,9 +168,25 @@ class ExposureState extends ChangeNotifier {
         notifyListeners();
       });
       _isListening = true;
+      
+      // Check if sensor is actually available
+      AmbientLight().currentAmbientLight().then((lux) {
+        if (lux == null) {
+          _hasSensor = false;
+          _errorMessage = 'No light sensor detected on this device.';
+          notifyListeners();
+        }
+      });
     } catch (e) {
       _errorMessage = 'Could not initialize light sensor: $e';
+      notifyListeners();
     }
+  }
+
+  void reinitializeSensor() {
+    _errorMessage = '';
+    _initSensor();
+    notifyListeners();
   }
 
   void toggleLock() {
