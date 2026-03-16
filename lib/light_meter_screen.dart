@@ -475,90 +475,105 @@ class LightMeterScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-              const Text(
-                'Settings',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 24),
-              const ListTile(
-                leading: Icon(LucideIcons.info),
-                title: Text('About LELEMETER'),
-                subtitle: Text(
-                  'Minimal Light Meter Based from your Lux sensor\nFlat Sensor Calibration: C=250.0',
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer<ExposureState>(
+        builder: (context, state, child) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Settings',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).textTheme.bodyLarge?.color),
+                      ),
+                      const SizedBox(height: 24),
+                      ListTile(
+                        leading: Icon(LucideIcons.info,
+                            color: Theme.of(context).iconTheme.color),
+                        title: Text('About LELEMETER',
+                            style: TextStyle(
+                                color: Theme.of(context).textTheme.bodyLarge?.color)),
+                        subtitle: Text(
+                          'Minimal Light Meter Based from your Lux sensor\nFlat Sensor Calibration: C=250.0',
+                          style: TextStyle(
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.color
+                                  ?.withAlpha(150)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Column(
+                        children: [
+                          SwitchListTile(
+                            title: const Text('Dark Mode'),
+                            secondary: const Icon(LucideIcons.moon),
+                            value: state.themeMode == ThemeMode.dark,
+                            activeColor: Theme.of(context).primaryColor,
+                            onChanged: (val) {
+                              state.toggleTheme();
+                            },
+                          ),
+                          SwitchListTile(
+                            title: const Text('Haptic Feedback'),
+                            secondary: const Icon(LucideIcons.smartphone),
+                            value: state.hapticsEnabled,
+                            activeColor: Theme.of(context).primaryColor,
+                            onChanged: (val) {
+                              state.toggleHaptics();
+                            },
+                          ),
+                          SwitchListTile(
+                            title: const Text('Analog Dial Style'),
+                            secondary: const Icon(LucideIcons.mousePointerClick),
+                            value: state.useDialUi,
+                            activeColor: Theme.of(context).primaryColor,
+                            onChanged: (val) {
+                              state.toggleDialStyle();
+                            },
+                          ),
+                          SwitchListTile(
+                            title: const Text('1/2 EV Steps'),
+                            secondary: const Icon(LucideIcons.sliders),
+                            value: state.useHalfSteps,
+                            activeColor: Theme.of(context).primaryColor,
+                            onChanged: (val) {
+                              state.toggleHalfSteps();
+                            },
+                          ),
+                          SwitchListTile(
+                            title: const Text('Show FPS Tools Panel'),
+                            secondary: const Icon(Icons.arrow_drop_down_circle),
+                            value: state.showBottomBar,
+                            activeColor: Theme.of(context).primaryColor,
+                            onChanged: (val) {
+                              state.toggleBottomBar();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Consumer<ExposureState>(
-                builder: (context, state, child) {
-                  return Column(
-                    children: [
-                      SwitchListTile(
-                        title: const Text('Dark Mode'),
-                        secondary: const Icon(LucideIcons.moon),
-                        value: state.themeMode == ThemeMode.dark,
-                        activeColor: Theme.of(context).primaryColor,
-                        onChanged: (val) {
-                          state.toggleTheme();
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('Haptic Feedback'),
-                        secondary: const Icon(LucideIcons.smartphone),
-                        value: state.hapticsEnabled,
-                        activeColor: Theme.of(context).primaryColor,
-                        onChanged: (val) {
-                          state.toggleHaptics();
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('Analog Dial Style'),
-                        secondary: const Icon(LucideIcons.mousePointerClick),
-                        value: state.useDialUi,
-                        activeColor: Theme.of(context).primaryColor,
-                        onChanged: (val) {
-                          state.toggleDialStyle();
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('1/2 EV Steps'),
-                        secondary: const Icon(LucideIcons.sliders),
-                        value: state.useHalfSteps,
-                        activeColor: Theme.of(context).primaryColor,
-                        onChanged: (val) {
-                          state.toggleHalfSteps();
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('Show FPS Tools Panel'),
-                        secondary: const Icon(Icons.arrow_drop_down_circle),
-                        value: state.showBottomBar,
-                        activeColor: Theme.of(context).primaryColor,
-                        onChanged: (val) {
-                          state.toggleBottomBar();
-                        },
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
-    ),
     );
   }
 
@@ -567,50 +582,62 @@ class LightMeterScreen extends StatelessWidget {
   void _showFpsDialog(BuildContext context, ExposureState state) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Video FPS Rule (180° Shutter)',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                ),
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer<ExposureState>(
+        builder: (context, state, child) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'Video FPS Rule (180° Shutter)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.color
+                            ?.withAlpha(150),
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    title: const Text('Off (Photo Mode)'),
+                    trailing: state.fpsOption == null
+                        ? const Icon(LucideIcons.check, color: Colors.amber)
+                        : null,
+                    onTap: () {
+                      state.setFpsOption(null);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  ...FpsOption.values.map((fps) {
+                    return ListTile(
+                      title: Text(fps.label),
+                      subtitle: Text(
+                        'Locks shutter to ${ExposureCalculator.formatShutterSpeed(fps.shutterSpeed)}',
+                      ),
+                      trailing: state.fpsOption == fps
+                          ? const Icon(LucideIcons.check, color: Colors.amber)
+                          : null,
+                      onTap: () {
+                        state.setFpsOption(fps);
+                        Navigator.pop(context);
+                      },
+                    );
+                  }),
+                ],
               ),
             ),
-            ListTile(
-              title: const Text('Off (Photo Mode)'),
-              trailing: state.fpsOption == null
-                  ? const Icon(LucideIcons.check, color: Colors.amber)
-                  : null,
-              onTap: () {
-                state.setFpsOption(null);
-                Navigator.pop(context);
-              },
-            ),
-            ...FpsOption.values.map((fps) {
-              return ListTile(
-                title: Text(fps.label),
-                subtitle: Text(
-                  'Locks shutter to ${ExposureCalculator.formatShutterSpeed(fps.shutterSpeed)}',
-                ),
-                trailing: state.fpsOption == fps
-                    ? const Icon(LucideIcons.check, color: Colors.amber)
-                    : null,
-                onTap: () {
-                  state.setFpsOption(fps);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
