@@ -908,9 +908,14 @@ class _ExposureDialState<T> extends State<_ExposureDial<T>> {
                       return RotatedBox(
                         quarterTurns: 1,
                         child: Center(
-                          child: Text(
-                            widget.formatValue(val),
-                            style: TextStyle(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                widget.formatValue(val),
+                                maxLines: 1,
+                                style: TextStyle(
                               fontSize: 24,
                               fontFamily: 'Courier',
                               fontWeight: isSelected
@@ -923,6 +928,8 @@ class _ExposureDialState<T> extends State<_ExposureDial<T>> {
                                         .bodyMedium
                                         ?.color
                                         ?.withOpacity(0.3),
+                                ),
+                              ),
                             ),
                           ),
                         ),
