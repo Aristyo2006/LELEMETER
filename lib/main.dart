@@ -29,10 +29,10 @@ class LightMeterApp extends StatelessWidget {
           theme: ThemeData(
             brightness: Brightness.light,
             scaffoldBackgroundColor: const Color(0xFFF5F5F5),
-            primaryColor: const Color(0xFFFFB300), // Amber highlight
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFFFFB300),
-              secondary: Color(0xFF03DAC6),
+            primaryColor: state.primaryColor,
+            colorScheme: ColorScheme.light(
+              primary: state.primaryColor,
+              secondary: const Color(0xFF03DAC6),
               surface: Colors.white,
             ),
             textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
@@ -40,12 +40,13 @@ class LightMeterApp extends StatelessWidget {
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
-            scaffoldBackgroundColor: const Color(0xFF0F0F0F),
-            primaryColor: const Color(0xFFFFB300), // Amber highlight
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFFFFB300),
-              secondary: Color(0xFF03DAC6),
-              surface: Color(0xFF1E1E1E),
+            scaffoldBackgroundColor: Colors.black, // Pure Black
+            primaryColor: state.primaryColor,
+            colorScheme: ColorScheme.dark(
+              primary: state.primaryColor,
+              secondary: const Color(0xFF03DAC6),
+              surface: Colors.black, // Pure Black
+              surfaceContainer: const Color(0xFF121212), // Subtle contrast for cards
             ),
             textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
             useMaterial3: true,

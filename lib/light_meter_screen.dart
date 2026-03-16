@@ -38,6 +38,13 @@ class LightMeterScreen extends StatelessWidget {
             );
           }
 
+          // Show alert if no sensor detected (once per session)
+          if (!state.hasSensor && !state.hasShownSensorAlert) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showSensorSupportAlert(context, state);
+            });
+          }
+
           if (state.errorMessage.isNotEmpty) {
             return Center(
               child: Padding(
@@ -516,6 +523,33 @@ class LightMeterScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'Primary Accent Color',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildColorOption(context, state, const Color(0xFFFFB300), 'Amber'),
+                            _buildColorOption(context, state, const Color(0xFF1DE9B6), 'Teal'),
+                            _buildColorOption(context, state, const Color(0xFF2979FF), 'Blue'),
+                            _buildColorOption(context, state, const Color(0xFFD500F9), 'Purple'),
+                            _buildColorOption(context, state, const Color(0xFFFF1744), 'Red'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       Column(
                         children: [
                           SwitchListTile(
@@ -650,6 +684,62 @@ class LightMeterScreen extends StatelessWidget {
               fontWeight: FontWeight.bold,
               color: color,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorOption(BuildContext context, ExposureState state, Color color, String name) {
+    final bool isSelected = state.primaryColor.value == color.value;
+    return GestureDetector(
+      onTap: () => state.setPrimaryColor(color),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.transparent,
+            width: 3,
+          ),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: color.withOpacity(0.4),
+              blurRadius: 8,
+              spreadRadius: 2,
+            )
+          ] : null,
+        ),
+        child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
+      ),
+    );
+  }
+
+  void _showSensorSupportAlert(BuildContext context, ExposureState state) {
+    state.markSensorAlertShown();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF121212),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(LucideIcons.alertTriangle, color: Colors.red),
+            const SizedBox(width: 12),
+            const Text('Sensor Missing', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          'Your device does not seem to have a physical light sensor, or it is not accessible. LELEMETER requires this sensor to measure light.\n\nNote: Emulators and some tablets do not have light sensors.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('I UNDERSTAND', style: TextStyle(color: Colors.amber)),
           ),
         ],
       ),

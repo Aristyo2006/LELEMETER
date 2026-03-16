@@ -15,6 +15,14 @@ class ExposureState extends ChangeNotifier {
   late SharedPreferences _prefs;
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
+  
+  bool _hasShownSensorAlert = false;
+  bool get hasShownSensorAlert => _hasShownSensorAlert;
+
+  void markSensorAlertShown() {
+    _hasShownSensorAlert = true;
+    notifyListeners();
+  }
 
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
@@ -67,6 +75,9 @@ class ExposureState extends ChangeNotifier {
   bool _showBottomBar = true;
   bool get showBottomBar => _showBottomBar;
 
+  Color _primaryColor = const Color(0xFFFFB300); // Default Amber
+  Color get primaryColor => _primaryColor;
+
   void toggleTheme() {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     _prefs.setBool('isDarkMode', _themeMode == ThemeMode.dark);
@@ -109,6 +120,13 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPrimaryColor(Color color) {
+    _primaryColor = color;
+    _prefs.setInt('primaryColor', color.value);
+    _triggerHaptic();
+    notifyListeners();
+  }
+
   List<int> get isoValues => _useHalfSteps ? ExposureCalculator.isoValuesHalf : ExposureCalculator.isoValues;
   List<double> get apertureValues => _useHalfSteps ? ExposureCalculator.apertureValuesHalf : ExposureCalculator.apertureValues;
   List<double> get shutterValues => _useHalfSteps ? ExposureCalculator.shutterValuesHalf : ExposureCalculator.shutterValues;
@@ -146,6 +164,9 @@ class ExposureState extends ChangeNotifier {
     
     String ndStr = _prefs.getString('ndFilter') ?? 'none';
     _ndFilter = NdFilter.values.firstWhere((e) => e.name == ndStr, orElse: () => NdFilter.none);
+
+    int colorValue = _prefs.getInt('primaryColor') ?? const Color(0xFFFFB300).value;
+    _primaryColor = Color(colorValue);
 
     _isInitialized = true;
     notifyListeners();
