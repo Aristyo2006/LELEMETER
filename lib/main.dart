@@ -45,15 +45,30 @@ class LightMeterApp extends StatelessWidget {
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
-            scaffoldBackgroundColor: state.isPureBlack ? Colors.black : const Color(0xFF0F0F0F),
+            scaffoldBackgroundColor: const Color(0xFF0E0E0E), // OLED Black
             primaryColor: state.primaryColor,
             colorScheme: ColorScheme.dark(
               primary: state.primaryColor,
-              secondary: const Color(0xFF03DAC6),
-              surface: state.isPureBlack ? Colors.black : const Color(0xFF1E1E1E),
-              surfaceContainer: state.isPureBlack ? const Color(0xFF121212) : const Color(0xFF242424),
+              secondary: const Color(0xFF9D9E9E), // Grey from design
+              tertiary: const Color(0xFF8EFF71), // Neon Green from design
+              surface: const Color(0xFF0E0E0E),
+              surfaceContainer: const Color(0xFF131313),
+              onSurface: const Color(0xFFE7E5E5),
+              onSurfaceVariant: const Color(0xFFACABAA),
             ),
-            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+            textTheme: GoogleFonts.interTextTheme(
+              ThemeData.dark().textTheme.copyWith(
+                    displayLarge: GoogleFonts.spaceGrotesk(),
+                    displayMedium: GoogleFonts.spaceGrotesk(),
+                    displaySmall: GoogleFonts.spaceGrotesk(),
+                    headlineLarge: GoogleFonts.spaceGrotesk(),
+                    headlineMedium: GoogleFonts.spaceGrotesk(),
+                    headlineSmall: GoogleFonts.spaceGrotesk(),
+                    titleLarge: GoogleFonts.spaceGrotesk(),
+                    titleMedium: GoogleFonts.spaceGrotesk(),
+                    titleSmall: GoogleFonts.spaceGrotesk(),
+                  ),
+            ),
             useMaterial3: true,
             appBarTheme: const AppBarTheme(
               backgroundColor: Colors.transparent,

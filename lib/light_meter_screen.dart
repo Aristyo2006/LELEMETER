@@ -1,509 +1,999 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'package:battery_plus/battery_plus.dart';
 import 'exposure_state.dart';
 import 'exposure_calculator.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'film_database_screen.dart';
+import 'package:flutter/services.dart';
+import 'settings_screen.dart';
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'LELEMETER',
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 4),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(
-              LucideIcons.settings,
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-            ),
-            onPressed: () {
-              _showAdvancedSettings(context);
+    return Consumer<ExposureState>(
+      builder: (context, state, child) {
+        final isDark = state.themeMode == ThemeMode.dark;
+        return Scaffold(
+          backgroundColor: isDark
+              ? (state.isPureBlack ? Colors.black : const Color(0xFF1A1B1E))
+              : const Color(0xFFF5F5F5),
+          body: Builder(
+            builder: (context) {
+              // Show sensor support alert if needed
+              if (!state.hasSensor && !state.hasShownSensorAlert) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _showSensorSupportAlert(context, state);
+                });
+              }
+
+              return Stack(
+                children: [
+                  // Background pattern
+                  Positioned.fill(
+                    child: CustomPaint(painter: _BackgroundPatternPainter()),
+                  ),
+                  Column(
+                    children: [
+                      _buildProHeader(context, state),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 24,
+                          ),
+                          child: Column(
+                            children: [
+                              _buildGlassReadout(context, state),
+                              const SizedBox(height: 16),
+                              _buildQuickControls(context, state),
+                              const SizedBox(height: 24),
+                              _buildMechanicalInterface(context, state),
+                              const SizedBox(
+                                height: 100,
+                              ), // Space for bottom nav
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _buildProBottomNav(context, state),
+                ],
+              );
             },
           ),
-        ],
-      ),
-      body: Consumer<ExposureState>(
-        builder: (context, state, child) {
-          if (!state.isInitialized) {
-            return const Scaffold(
-              backgroundColor: Colors.black,
-              body: Center(child: CircularProgressIndicator(color: Colors.amber)),
-            );
-          }
-
-          // Show alert if no sensor detected (once per session)
-          if (!state.hasSensor && !state.hasShownSensorAlert) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showSensorSupportAlert(context, state);
-            });
-          }
-
-          if (state.errorMessage.isNotEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      LucideIcons.alertTriangle,
-                      color: Colors.red,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      state.errorMessage,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          if (!state.isListening && state.currentLux == 0) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          return Column(
-            children: [
-              _buildTopSection(context, state),
-              Divider(
-                height: 1,
-                color: Theme.of(context).dividerColor.withOpacity(0.1),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 24,
-                    horizontal: 16,
-                  ),
-                  children: [
-                    state.useDialUi
-                        ? _ExposureDial<int>(
-                            title: 'ISO',
-                            target: CalculationTarget.iso,
-                            currentValue: state.iso,
-                            values: state.isoValues,
-                            isTarget: state.target == CalculationTarget.iso,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.iso),
-                            onValueChanged: (val) => state.setIso(val),
-                            formatValue: (v) => v.toString(),
-                          )
-                        : _buildExposureParameter(
-                            context: context,
-                            title: 'ISO',
-                            target: CalculationTarget.iso,
-                            currentValue: state.iso,
-                            values: state.isoValues,
-                            isTarget: state.target == CalculationTarget.iso,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.iso),
-                            onValueChanged: (val) => state.setIso(val),
-                            formatValue: (v) => v.toString(),
-                          ),
-                    const SizedBox(height: 24),
-                    state.useDialUi
-                        ? _ExposureDial<double>(
-                            title: 'APERTURE',
-                            target: CalculationTarget.aperture,
-                            currentValue: state.aperture,
-                            values: state.apertureValues,
-                            isTarget:
-                                state.target == CalculationTarget.aperture,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.aperture),
-                            onValueChanged: (val) => state.setAperture(val),
-                            formatValue: (v) =>
-                                v.toString(), // Simplified format, no 'f/'
-                          )
-                        : _buildExposureParameter(
-                            context: context,
-                            title: 'APERTURE',
-                            target: CalculationTarget.aperture,
-                            currentValue: state.aperture,
-                            values: state.apertureValues,
-                            isTarget:
-                                state.target == CalculationTarget.aperture,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.aperture),
-                            onValueChanged: (val) => state.setAperture(val),
-                            formatValue: (v) =>
-                                ExposureCalculator.formatAperture(v),
-                          ),
-                    const SizedBox(height: 24),
-                    state.useDialUi
-                        ? _ExposureDial<double>(
-                            title: 'SHUTTER',
-                            target: CalculationTarget.shutter,
-                            currentValue: state.shutterSpeed,
-                            values: state.shutterValues,
-                            isTarget: state.target == CalculationTarget.shutter,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.shutter),
-                            onValueChanged: (val) => state.setShutterSpeed(val),
-                            formatValue: (v) =>
-                                ExposureCalculator.formatShutterSpeed(v),
-                            isLockedByVideo: state.fpsOption != null,
-                          )
-                        : _buildExposureParameter(
-                            context: context,
-                            title: 'SHUTTER',
-                            target: CalculationTarget.shutter,
-                            currentValue: state.shutterSpeed,
-                            values: state.shutterValues,
-                            isTarget: state.target == CalculationTarget.shutter,
-                            onTargetSelected: () =>
-                                state.setTarget(CalculationTarget.shutter),
-                            onValueChanged: (val) => state.setShutterSpeed(val),
-                            formatValue: (v) =>
-                                ExposureCalculator.formatShutterSpeed(v),
-                            isLockedByVideo: state.fpsOption != null,
-                          ),
-                    const SizedBox(height: 24),
-                    state.useDialUi
-                        ? _ExposureDial<NdFilter>(
-                            title: 'ND FILTER',
-                            target: CalculationTarget.shutter, // Ignore
-                            currentValue: state.ndFilter,
-                            values: NdFilter.values,
-                            isTarget: false,
-                            onTargetSelected: () {}, // Ignore
-                            onValueChanged: (val) => state.setNdFilter(val),
-                            formatValue: (v) => v.label,
-                            showTargetToggle: false,
-                          )
-                        : _buildExposureParameter(
-                            context: context,
-                            title: 'ND FILTER',
-                            target: CalculationTarget.shutter, // Ignore
-                            currentValue: state.ndFilter,
-                            values: NdFilter.values,
-                            isTarget: false,
-                            onTargetSelected: () {}, // Ignore
-                            onValueChanged: (val) => state.setNdFilter(val),
-                            formatValue: (v) => v.label,
-                            showTargetToggle: false,
-                          ),
-                  ],
-                ),
-              ),
-              if (state.showBottomBar) _buildToolsSection(context, state),
-            ],
-          );
-        },
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildTopSection(BuildContext context, ExposureState state) {
+  Widget _buildProHeader(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'EV',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                    letterSpacing: 2,
-                  ),
-                ),
-                Text(
-                  state.ev.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 72,
-                    fontWeight: FontWeight.w200,
-                    letterSpacing: -2,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${state.effectiveLux.toStringAsFixed(0)} LUX',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                if (state.effectiveLux == 0)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.withOpacity(0.5)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(LucideIcons.alertCircle,
-                            size: 14, color: Colors.red),
-                        SizedBox(width: 6),
-                        Text(
-                          'SENSOR READS 0 LUX',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: state.toggleLock,
-              borderRadius: BorderRadius.circular(40),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: state.isLocked
-                      ? Theme.of(context).primaryColor
-                      : Theme.of(context).dividerColor.withOpacity(0.05),
-                ),
-                child: Icon(
-                  state.isLocked ? LucideIcons.lock : LucideIcons.unlock,
-                  color: state.isLocked
-                      ? Colors.black
-                      : Theme.of(context).iconTheme.color,
-                  size: 32,
-                ),
-              ),
-            ),
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131313) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.05),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildExposureParameter<T>({
-    required BuildContext context,
-    required String title,
-    required CalculationTarget target,
-    required T currentValue,
-    required List<T> values,
-    required bool isTarget,
-    required VoidCallback onTargetSelected,
-    required Function(T) onValueChanged,
-    required String Function(T) formatValue,
-    bool isLockedByVideo = false,
-    bool showTargetToggle = true,
-  }) {
-    final primary = Theme.of(context).primaryColor;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+      child: SafeArea(
+        bottom: false,
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                letterSpacing: 2,
-              ),
-            ),
-            if (isLockedByVideo)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
+            Row(
+              children: [
+                Text(
+                  'LELEMETER',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.bold,
+                    color: state.primaryColor,
+                    fontSize: 16,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-                child: const Row(
+              ],
+            ),
+            Row(
+              children: [
+                Text(
+                  'SYNCED',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF8EFF71),
+                    fontSize: 10,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.sensors, size: 18, color: state.primaryColor),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBatteryIcon(ExposureState state, Color lcdInk) {
+    final isCharging = state.currentBatteryState == BatteryState.charging ||
+        state.currentBatteryState == BatteryState.full;
+    final level = state.batteryLevel;
+
+    IconData icon;
+    Color color;
+
+    if (isCharging) {
+      icon = Icons.battery_charging_full;
+      color = const Color(0xFF8EFF71);
+    } else if (level < 20) {
+      icon = Icons.battery_alert;
+      color = const Color(0xFFEE7D77);
+    } else if (level < 40) {
+      icon = Icons.battery_2_bar;
+      color = lcdInk;
+    } else if (level < 60) {
+      icon = Icons.battery_4_bar;
+      color = lcdInk;
+    } else if (level < 80) {
+      icon = Icons.battery_5_bar;
+      color = lcdInk;
+    } else {
+      icon = Icons.battery_full;
+      color = lcdInk;
+    }
+
+    return Icon(icon, size: 14, color: color);
+  }
+
+  Widget _buildBatteryStatusChip(ExposureState state, Color lcdInk) {
+    final isCharging = state.currentBatteryState == BatteryState.charging ||
+        state.currentBatteryState == BatteryState.full;
+    final isLow = state.batteryLevel > 0 && state.batteryLevel < 20;
+
+    final String label;
+    final Color color;
+
+    if (isCharging) {
+      label = '⚡CHARG';
+      color = const Color(0xFF8EFF71); // green
+    } else if (isLow) {
+      label = '!LOW';
+      color = const Color(0xFFEE7D77); // red
+    } else {
+      label = state.batteryLevel <= 0 ? '--%' : '${state.batteryLevel}%';
+      color = lcdInk;
+    }
+
+    return Text(
+      label,
+      style: GoogleFonts.vt323(
+        fontSize: 14,
+        color: color,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _buildGlassReadout(BuildContext context, ExposureState state) {
+    const lcdBg = Color(0xFF97A393); // Classic LCD backdrop
+    const lcdInk = Color(0xFF1A1F18); // LCD segment color
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: lcdBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.black.withValues(alpha: 0.2),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            offset: const Offset(0, 4),
+            blurRadius: 10,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            spreadRadius: -2,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: Column(
+          children: [
+            // Top Indicator Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'ISO :  ${state.iso}',
+                  style: GoogleFonts.vt323(fontSize: 14, color: lcdInk),
+                ),
+                Row(
                   children: [
-                    Icon(LucideIcons.video, size: 12, color: Colors.amber),
-                    SizedBox(width: 4),
+                    _buildBatteryIcon(state, lcdInk),
+                    const SizedBox(width: 4),
+                    _buildBatteryStatusChip(state, lcdInk),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(height: 1, color: lcdInk.withValues(alpha: 0.2)),
+            const SizedBox(height: 16),
+
+            // AT-A-GLANCE T/F ROW
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Shutter (T)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'FPS LOCKED',
-                      style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                      'T',
+                      style: GoogleFonts.vt323(fontSize: 16, color: lcdInk),
+                    ),
+                    Text(
+                      ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
+                      style: GoogleFonts.vt323(
+                        fontSize: 56,
+                        height: 0.9,
+                        color: lcdInk,
+                        letterSpacing: -2,
                       ),
                     ),
                   ],
                 ),
-              )
-            else if (showTargetToggle)
-              GestureDetector(
-                onTap: onTargetSelected,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isTarget
-                        ? primary
-                        : Theme.of(context).dividerColor.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    isTarget ? 'AUTO' : 'SELECT',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                      color: isTarget
-                          ? Colors.black
-                          : Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                // Indicator
+                if (state.target == CalculationTarget.shutter)
+                  const Icon(Icons.arrow_left, size: 16, color: lcdInk)
+                else if (state.target == CalculationTarget.aperture)
+                  const Icon(Icons.arrow_right, size: 16, color: lcdInk)
+                else
+                  const SizedBox(width: 16),
+                // Aperture (F)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'F',
+                      style: GoogleFonts.vt323(fontSize: 16, color: lcdInk),
                     ),
+                    Text(
+                      ExposureCalculator.formatAperture(
+                        state.aperture,
+                      ).replaceAll('f/', ''),
+                      style: GoogleFonts.vt323(
+                        fontSize: 56,
+                        height: 0.9,
+                        color: lcdInk,
+                        letterSpacing: -2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Stats & EV Row (Balanced Flex Layout)
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildLcdStat(
+                    'EV',
+                    state.effectiveLux <= 0
+                        ? '--.-'
+                        : state.ev.toStringAsFixed(1),
                   ),
                 ),
-              ),
+                Container(
+                  width: 1,
+                  height: 16,
+                  color: lcdInk.withValues(alpha: 0.2),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: _buildLcdStat(
+                    'LUX',
+                    state.effectiveLux.toInt().toString(),
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 16,
+                  color: lcdInk.withValues(alpha: 0.2),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: _buildLcdStat('ND', state.ndFilter.name),
+                ),
+                Container(
+                  width: 1,
+                  height: 16,
+                  color: lcdInk.withValues(alpha: 0.2),
+                ),
+                Expanded(
+                  flex: 4,
+                  child: _buildLcdStat(
+                    'FILM',
+                    state.selectedFilm?.name ?? 'NONE',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildExposureBar(state),
           ],
         ),
-        const SizedBox(height: 16),
-        if (isTarget)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            decoration: BoxDecoration(
-              color: primary.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: primary.withOpacity(0.3)),
-            ),
-            child: Center(
-              child: Consumer<ExposureState>(
-                builder: (context, state, _) {
-                  final isErr = state.effectiveLux <= 0;
-                  return Text(
-                    isErr ? 'Err' : formatValue(currentValue),
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontFamily: 'Courier',
-                      fontWeight: FontWeight.w600,
-                      color: isErr ? Colors.red : primary,
-                    ),
-                  );
-                },
-              ),
-            ),
-          )
-        else
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: values.map((val) {
-                final isSelected = (val == currentValue);
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      if (!isLockedByVideo) onValueChanged(val);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Theme.of(context).textTheme.bodyLarge?.color
-                            : Theme.of(context).dividerColor.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: isSelected
-                            ? null
-                            : Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).dividerColor.withOpacity(0.1),
-                              ),
-                      ),
-                      child: Text(
-                        formatValue(val),
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.w500,
-                          color: isSelected
-                              ? Theme.of(context).scaffoldBackgroundColor
-                              : (isLockedByVideo
-                                    ? Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.color
-                                          ?.withOpacity(0.3)
-                                    : Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.color),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
+      ),
+    );
+  }
+
+  Widget _buildLcdStat(String label, String value) {
+    const lcdInk = Color(0xFF1A1F18);
+    return Column(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: GoogleFonts.vt323(fontSize: 10, color: lcdInk),
+        ),
+        Text(
+          value.toUpperCase(),
+          style: GoogleFonts.vt323(fontSize: 22, color: lcdInk),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
 
-  Widget _buildToolsSection(BuildContext context, ExposureState state) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.1),
+  Widget _buildExposureBar(ExposureState state) {
+    // Delta range from -3 to +3 stops for the bar visualization
+    final double delta = state.exposureCompensation.clamp(-3.0, 3.0);
+    final double progress = (delta + 3.0) / 6.0;
+
+    return Column(
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            return Container(
+              height: 4,
+              width: width,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1F18).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: Stack(
+                children: [
+                  // Center marker
+                  Center(
+                    child: Container(
+                      width: 2,
+                      height: 4,
+                      color: const Color(0xFF1A1F18).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: EdgeInsets.only(
+                      left: progress > 0.5 ? width / 2 : width * progress,
+                    ),
+                    width: (progress - 0.5).abs() * width,
+                    height: double.infinity,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8EFF71),
+                      borderRadius: BorderRadius.circular(2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF8EFF71).withValues(alpha: 0.3),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '-3',
+              style: GoogleFonts.vt323(
+                fontSize: 10,
+                color: const Color(0xFF1A1F18),
+              ),
+            ),
+            Text(
+              '0',
+              style: GoogleFonts.vt323(
+                fontSize: 10,
+                color: const Color(0xFF1A1F18),
+              ),
+            ),
+            Text(
+              '+3',
+              style: GoogleFonts.vt323(
+                fontSize: 10,
+                color: const Color(0xFF1A1F18),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickControls(BuildContext context, ExposureState state) {
+    return Row(
+      children: [
+        Expanded(
+          child: _build3DQuickButton(
+            label: state.isLocked ? 'LOCKED' : 'LOCK SENSOR',
+            icon: state.isLocked ? Icons.lock : Icons.lock_open,
+            isActive: state.isLocked,
+            color: state.isLocked
+                ? const Color(0xFFFBBC00)
+                : const Color(0xFFE7E5E5),
+            onTap: () => state.toggleLock(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _build3DQuickButton({
+    required String label,
+    required IconData icon,
+    required bool isActive,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isActive
+                ? [color.withValues(alpha: 0.2), color.withValues(alpha: 0.05)]
+                : [const Color(0xFF2A2A2A), const Color(0xFF131313)],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive
+                ? color.withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.05),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              offset: const Offset(4, 4),
+              blurRadius: 8,
+            ),
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.05),
+              offset: const Offset(-2, -2),
+              blurRadius: 4,
+            ),
+          ],
+        ),
+        child: Container(
+          margin: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: isActive ? color.withValues(alpha: 0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isActive ? color : const Color(0xFF767575),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                  color: isActive ? color : const Color(0xFF767575),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    );
+  }
+
+  Widget _buildModeSelector(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.dark;
+    final modes = [
+      {'label': 'P', 'full': 'PROGRAM', 'target': CalculationTarget.shutter},
+      {'label': 'A', 'full': 'APERTURE', 'target': CalculationTarget.aperture},
+      {'label': 'S', 'full': 'SHUTTER', 'target': CalculationTarget.shutter},
+    ];
+
+    return Row(
+      children: modes.map((m) {
+        // Since we don't have distinct PASM enums yet, we'll map them loosely to the current targets
+        bool isActive = false;
+        if (m['label'] == 'A' && state.target == CalculationTarget.aperture)
+          isActive = true;
+        if (m['label'] == 'S' && state.target == CalculationTarget.shutter)
+          isActive = true;
+        if (m['label'] == 'P' && !isActive)
+          isActive = true; // Temporary P fallback
+
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              state.setTarget(m['target'] as CalculationTarget);
+              HapticFeedback.lightImpact();
+            },
+            child: Container(
+              height: 56,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isActive
+                      ? [
+                          state.primaryColor,
+                          state.primaryColor.withValues(alpha: 0.6),
+                        ]
+                      : (isDark
+                            ? [const Color(0xFF444444), const Color(0xFF1E1E1E)]
+                            : [
+                                const Color(0xFFFFFFFF),
+                                const Color(0xFFE5E5E5),
+                              ]),
+                ),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: isActive
+                      ? state.primaryColor.withValues(alpha: 0.8)
+                      : (isDark
+                            ? const Color(0xFF1A1A1A)
+                            : const Color(0xFFD4D4D4)),
+                  width: 1,
+                ),
+                boxShadow: isDark
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.9),
+                          offset: const Offset(1.5, 2.5),
+                          blurRadius: 4,
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.03),
+                          offset: const Offset(-1, -1),
+                          blurRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: isActive
+                              ? Colors.white.withValues(alpha: 0.2)
+                              : Colors.white.withValues(alpha: 0.05),
+                          offset: const Offset(0, 1),
+                          blurStyle: BlurStyle.inner,
+                        ),
+                      ]
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          offset: const Offset(1, 2),
+                          blurRadius: 3,
+                        ),
+                        const BoxShadow(
+                          color: Colors.white,
+                          offset: Offset(-1, -1),
+                          blurRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: isActive
+                              ? Colors.white.withValues(alpha: 0.4)
+                              : Colors.white.withValues(alpha: 0.9),
+                          offset: const Offset(0, 1),
+                          blurStyle: BlurStyle.inner,
+                        ),
+                      ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    m['label'] as String,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isActive ? Colors.black : Colors.white,
+                    ),
+                  ),
+                  Text(
+                    m['full'] as String,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                      color: isActive
+                          ? Colors.black.withValues(alpha: 0.5)
+                          : const Color(0xFF767575),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMechanicalInterface(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.dark;
+    return Column(
+      children: [
+        _buildModeSelector(context, state),
+        const SizedBox(height: 24),
+        Row(
           children: [
-            _ToolButton(
-              icon: LucideIcons.video,
-              label: state.fpsOption == null
-                  ? 'FPS RULE'
-                  : state.fpsOption!.label,
-              isActive: state.fpsOption != null,
-              onTap: () => _showFpsDialog(context, state),
+            Expanded(
+              child: _build3DControlBlock(
+                label: 'SHUTTER',
+                value: ExposureCalculator.formatShutterSpeed(
+                  state.shutterSpeed,
+                ),
+                color: state.target == CalculationTarget.shutter
+                    ? state.primaryColor
+                    : (isDark ? Colors.white : Colors.black),
+                isDark: isDark,
+                onDecrement: () => state.setShutterSpeed(
+                  state.shutterValues[math.max(
+                    0,
+                    state.shutterValues.indexOf(state.shutterSpeed) - 1,
+                  )],
+                ),
+                onIncrement: () => state.setShutterSpeed(
+                  state.shutterValues[math.min(
+                    state.shutterValues.length - 1,
+                    state.shutterValues.indexOf(state.shutterSpeed) + 1,
+                  )],
+                ),
+                onTap: () => state.setTarget(CalculationTarget.shutter),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _build3DControlBlock(
+                label: 'APERTURE',
+                value: ExposureCalculator.formatAperture(state.aperture),
+                color: state.target == CalculationTarget.aperture
+                    ? state.primaryColor
+                    : (isDark ? Colors.white : Colors.black),
+                isDark: isDark,
+                onDecrement: () => state.setAperture(
+                  state.apertureValues[math.max(
+                    0,
+                    state.apertureValues.indexOf(state.aperture) - 1,
+                  )],
+                ),
+                onIncrement: () => state.setAperture(
+                  state.apertureValues[math.min(
+                    state.apertureValues.length - 1,
+                    state.apertureValues.indexOf(state.aperture) + 1,
+                  )],
+                ),
+                onTap: () => state.setTarget(CalculationTarget.aperture),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _build3DControlBlock(
+                label: 'ISO SPEED',
+                value: state.iso.toString(),
+                color: state.selectedFilm != null
+                    ? const Color(0xFF42A5F5)
+                    : (state.target == CalculationTarget.iso
+                          ? state.primaryColor
+                          : (isDark ? Colors.white : Colors.black)),
+                isDark: isDark,
+                onDecrement: state.selectedFilm != null
+                    ? () {}
+                    : () => state.setIso(
+                        state.isoValues[math.max(
+                          0,
+                          state.isoValues.indexOf(state.iso) - 1,
+                        )],
+                      ),
+                onIncrement: state.selectedFilm != null
+                    ? () {}
+                    : () => state.setIso(
+                        state.isoValues[math.min(
+                          state.isoValues.length - 1,
+                          state.isoValues.indexOf(state.iso) + 1,
+                        )],
+                      ),
+                onTap: state.selectedFilm != null
+                    ? () {}
+                    : () => state.setTarget(CalculationTarget.iso),
+                isLocked: state.selectedFilm != null,
+                caption: state.selectedFilm != null ? 'FILM' : null,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _build3DControlBlock(
+                label: 'EXP. COMP',
+                value:
+                    '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)}',
+                color: state.exposureCompensation != 0
+                    ? const Color(0xFF8EFF71)
+                    : (isDark ? Colors.white : Colors.black),
+                isDark: isDark,
+                onDecrement: () => state.setExposureCompensation(
+                  state.exposureCompensation - 0.3,
+                ),
+                onIncrement: () => state.setExposureCompensation(
+                  state.exposureCompensation + 0.3,
+                ),
+                onTap: () => _showExposureCompensationDialog(context, state),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildFilmSimulationButton(context, state),
+        const SizedBox(height: 16),
+        _buildNdFilterButton(context, state),
+      ],
+    );
+  }
+
+  Widget _build3DControlBlock({
+    required String label,
+    required String value,
+    required Color color,
+    required bool isDark,
+    required VoidCallback onDecrement,
+    required VoidCallback onIncrement,
+    required VoidCallback onTap,
+    bool isLocked = false,
+    String? caption,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 84, // Reduced height for insets
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF161719) : const Color(0xFFF2F2F2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.black : Colors.black.withValues(alpha: 0.05),
+            width: 1,
+          ),
+          // Sharp Inset shadow for a "carved" look
+          boxShadow: isDark
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.95),
+                    offset: const Offset(2, 2),
+                    blurRadius: 4,
+                    blurStyle: BlurStyle.inner,
+                  ),
+                  BoxShadow(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    offset: const Offset(-1, -1),
+                    blurRadius: 2,
+                    blurStyle: BlurStyle.inner,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    offset: const Offset(1, 1),
+                    blurRadius: 2,
+                    blurStyle: BlurStyle.inner,
+                  ),
+                  const BoxShadow(
+                    color: Colors.white,
+                    offset: Offset(-1, -1),
+                    blurRadius: 2,
+                    blurStyle: BlurStyle.inner,
+                  ),
+                ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 8,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF767575),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                GestureDetector(
+                  onTap: onDecrement,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: isDark
+                            ? [const Color(0xFF383838), const Color(0xFF111111)]
+                            : [
+                                const Color(0xFFFFFFFF),
+                                const Color(0xFFE0E0E0),
+                              ],
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.5)
+                            : const Color(0xFFCCCCCC),
+                        width: 1,
+                      ),
+                      boxShadow: isDark
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.8),
+                                offset: const Offset(1.5, 2.5),
+                                blurRadius: 4,
+                              ),
+                              BoxShadow(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                offset: const Offset(-0.5, -0.5),
+                                blurRadius: 1,
+                                blurStyle: BlurStyle.inner,
+                              ),
+                            ]
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                offset: const Offset(1, 2),
+                                blurRadius: 3,
+                              ),
+                              const BoxShadow(
+                                color: Colors.white,
+                                offset: Offset(-1, -1),
+                                blurRadius: 1,
+                                blurStyle: BlurStyle.inner,
+                              ),
+                            ],
+                    ),
+                    child: const Icon(
+                      Icons.remove,
+                      size: 16,
+                      color: Color(0xFF767575),
+                    ),
+                  ),
+                ),
+                Column(
+                  children: [
+                    Text(
+                      value,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                    if (caption != null)
+                      Text(
+                        caption,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 6,
+                          fontWeight: FontWeight.bold,
+                          color: color.withValues(alpha: 0.5),
+                        ),
+                      ),
+                  ],
+                ),
+                GestureDetector(
+                  onTap: onIncrement,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: isDark
+                            ? [const Color(0xFF383838), const Color(0xFF111111)]
+                            : [
+                                const Color(0xFFFFFFFF),
+                                const Color(0xFFE0E0E0),
+                              ],
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.5)
+                            : const Color(0xFFCCCCCC),
+                        width: 1,
+                      ),
+                      boxShadow: isDark
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.8),
+                                offset: const Offset(1.5, 2.5),
+                                blurRadius: 4,
+                              ),
+                              BoxShadow(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                offset: const Offset(-0.5, -0.5),
+                                blurRadius: 1,
+                                blurStyle: BlurStyle.inner,
+                              ),
+                            ]
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                offset: const Offset(1, 2),
+                                blurRadius: 3,
+                              ),
+                              const BoxShadow(
+                                color: Colors.white,
+                                offset: Offset(-1, -1),
+                                blurRadius: 1,
+                                blurStyle: BlurStyle.inner,
+                              ),
+                            ],
+                    ),
+                    child: const Icon(
+                      Icons.add,
+                      size: 16,
+                      color: Color(0xFF767575),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -511,186 +1001,151 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  void _showAdvancedSettings(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _SettingsOverlay(),
-    );
-  }
-}
+  // Duplicated _buildFilmSimulationButton removed
 
-class _SettingsOverlay extends StatelessWidget {
-  const _SettingsOverlay();
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ExposureState>(
-      builder: (context, state, child) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-          ),
-          width: double.infinity,
-          height: double.infinity,
-          child: Column(
+  Widget _buildNdFilterButton(BuildContext context, ExposureState state) {
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: state.themeMode == ThemeMode.dark
+            ? const Color(0xFF191A1A)
+            : const Color(0xFFFFFFFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: state.themeMode == ThemeMode.dark
+              ? Colors.transparent
+              : const Color(0xFFE5E5E5),
+          width: 1,
+        ),
+        boxShadow: state.themeMode == ThemeMode.dark
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  offset: const Offset(4, 4),
+                  blurRadius: 10,
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  offset: const Offset(2, 4),
+                  blurRadius: 8,
+                ),
+              ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-                  child: SafeArea(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Settings',
-                              style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1,
-                                  color: Theme.of(context).textTheme.bodyLarge?.color),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(LucideIcons.x, size: 28),
-                              color: state.primaryColor,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(LucideIcons.info,
-                              color: Theme.of(context).iconTheme.color),
-                          title: Text('About LELEMETER',
-                              style: TextStyle(
-                                  color: Theme.of(context).textTheme.bodyLarge?.color)),
-                          subtitle: Text(
-                            'Minimal Light Meter Based from your Lux sensor\nFlat Sensor Calibration: C=250.0\nVersion Milestone: 1.1.1 Hotfix',
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.color
-                                    ?.withAlpha(150)),
-                          ),
-                        ),
-                        const Divider(height: 32),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Dark Mode'),
-                          secondary: const Icon(LucideIcons.moon),
-                          value: state.themeMode == ThemeMode.dark,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleTheme();
-                          },
-                        ),
-                        if (state.themeMode == ThemeMode.dark)
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Pure Black'),
-                            subtitle: Text(
-                              'Uses absolute black for OLED screens to save battery and increase contrast.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                              ),
-                            ),
-                            secondary: const Icon(LucideIcons.layers),
-                            value: state.isPureBlack,
-                            activeColor: state.primaryColor,
-                            onChanged: (val) {
-                              state.togglePureBlack();
-                            },
-                          ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _showColorPicker(context, state),
-                            icon: const Icon(LucideIcons.palette, size: 20, color: Colors.black),
-                            label: const Text(
-                              'CUSTOMIZE ACCENT COLOR',
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: state.primaryColor,
-                              padding: const EdgeInsets.symmetric(vertical: 18),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 4,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Haptic Feedback'),
-                          secondary: const Icon(LucideIcons.smartphone),
-                          value: state.hapticsEnabled,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleHaptics();
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Analog Dial Style'),
-                          secondary: const Icon(LucideIcons.mousePointerClick),
-                          value: state.useDialUi,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleDialStyle();
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('1/2 EV Steps'),
-                          secondary: const Icon(LucideIcons.sliders),
-                          value: state.useHalfSteps,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleHalfSteps();
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Show FPS Tools Panel'),
-                          secondary: const Icon(Icons.arrow_drop_down_circle),
-                          value: state.showBottomBar,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleBottomBar();
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Show Status Bar'),
-                          secondary: const Icon(LucideIcons.maximize),
-                          value: state.showStatusBar,
-                          activeColor: state.primaryColor,
-                          onChanged: (val) {
-                            state.toggleStatusBar();
-                          },
-                        ),
-                        const Divider(height: 32),
-                        _buildDiagnosticSection(context, state),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-                  ),
+              Text(
+                'ND FILTER',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  color: state.themeMode == ThemeMode.dark
+                      ? const Color(0xFF767575)
+                      : const Color(0xFFA0A0A0),
                 ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                '${state.ndFilter.label} ${state.ndFilter == NdFilter.none ? '' : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS'}',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF8EFF71),
+                ),
+              ),
+            ],
+          ),
+          GestureDetector(
+            onTap: () {
+              // Show ND filter picker dialog
+              _showNdFilterPickerDialog(context, state);
+            },
+            child: Icon(
+              Icons.tune,
+              color: state.themeMode == ThemeMode.dark
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.2),
+              size: 24,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNdFilterPickerDialog(BuildContext context, ExposureState state) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: state.themeMode == ThemeMode.dark
+          ? const Color(0xFF131313)
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'SELECT ND FILTER',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: state.themeMode == ThemeMode.dark
+                      ? Colors.white
+                      : Colors.black,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: NdFilter.values.map((f) {
+                  final isSelected = state.ndFilter == f;
+                  final isDark = state.themeMode == ThemeMode.dark;
+                  return GestureDetector(
+                    onTap: () {
+                      state.setNdFilter(f);
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? state.primaryColor
+                            : (isDark
+                                  ? const Color(0xFF191A1A)
+                                  : const Color(0xFFEEEEEE)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        f.label,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected
+                              ? Colors.black
+                              : (isDark ? Colors.white : Colors.black),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         );
@@ -698,622 +1153,412 @@ class _SettingsOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildDiagnosticSection(BuildContext context, ExposureState state) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Sensor Diagnostics',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: state.primaryColor,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildDiagnosticRow(
-          context,
-          'Status',
-          state.hasSensor ? 'Hardware Detected' : 'No Hardware Found',
-          state.hasSensor ? Colors.green : Colors.red,
-        ),
-        _buildDiagnosticRow(
-          context,
-          'Signal',
-          state.isListening ? 'Stream Active' : 'Stream Closed',
-          state.isListening ? Colors.green : Colors.orange,
-        ),
-        _buildDiagnosticRow(
-          context,
-          'Last Update',
-          state.lastUpdate != null
-              ? '${DateTime.now().difference(state.lastUpdate!).inSeconds}s ago'
-              : 'Never',
-          Colors.white.withOpacity(0.5),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            icon: const Icon(LucideIcons.refreshCw, size: 16),
-            label: const Text('Reset Light Sensor'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: state.primaryColor,
-              side: BorderSide(color: state.primaryColor),
-            ),
-            onPressed: () => state.reinitializeSensor(),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Sensor Calibration',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: state.primaryColor,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Adjust the sensitivity of your light sensor if it reads too high or too low compared to a dedicated meter.',
-          style: TextStyle(
-            fontSize: 11,
-            color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  activeTrackColor: state.primaryColor,
-                  thumbColor: state.primaryColor,
-                  overlayColor: state.primaryColor.withOpacity(0.1),
-                ),
-                child: Slider(
-                  value: state.calibrationFactor,
-                  min: 0.5,
-                  max: 2.0,
-                  divisions: 30,
-                  label: '${state.calibrationFactor.toStringAsFixed(2)}x',
-                  onChanged: (val) => state.setCalibrationFactor(val),
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: state.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${state.calibrationFactor.toStringAsFixed(2)}x',
-                style: TextStyle(
-                  color: state.primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Courier',
-                ),
-              ),
-            ),
-          ],
-        ),
-        Center(
-          child: TextButton(
-            onPressed: () => state.setCalibrationFactor(1.0),
-            child: Text(
-              'RESET TO DEFAULT (1.00x)',
-              style: TextStyle(
-                color: state.primaryColor.withOpacity(0.5),
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ToolButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _ToolButton({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).primaryColor;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+  Widget _buildFilmSimulationButton(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.dark;
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const FilmDatabaseScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isActive ? primary.withOpacity(0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isActive ? primary.withOpacity(0.5) : Theme.of(context).dividerColor.withOpacity(0.1),
-          ),
+          color: isDark ? const Color(0xFF252626) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
         ),
         child: Row(
-          children: [
-            Icon(icon, size: 18, color: isActive ? primary : Theme.of(context).iconTheme.color),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isActive ? primary : Theme.of(context).textTheme.bodyMedium?.color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ExposureDial<T> extends StatefulWidget {
-  final String title;
-  final CalculationTarget target;
-  final T currentValue;
-  final List<T> values;
-  final bool isTarget;
-  final VoidCallback onTargetSelected;
-  final Function(T) onValueChanged;
-  final String Function(T) formatValue;
-  final bool isLockedByVideo;
-  final bool showTargetToggle;
-
-  const _ExposureDial({
-    required this.title,
-    required this.target,
-    required this.currentValue,
-    required this.values,
-    required this.isTarget,
-    required this.onTargetSelected,
-    required this.onValueChanged,
-    required this.formatValue,
-    this.isLockedByVideo = false,
-    this.showTargetToggle = true,
-  });
-
-  @override
-  State<_ExposureDial<T>> createState() => _ExposureDialState<T>();
-}
-
-class _ExposureDialState<T> extends State<_ExposureDial<T>> {
-  late FixedExtentScrollController _scrollController;
-
-  @override
-  void initState() {
-    super.initState();
-    _initController();
-  }
-
-  int _findIndex(T value) {
-    if (value is num) {
-      int index = -1;
-      double minDiff = double.infinity;
-      for (int i = 0; i < widget.values.length; i++) {
-        final val = widget.values[i];
-        if (val is num) {
-          double diff = val.toDouble() - (value as num).toDouble();
-          if (diff.abs() < minDiff) {
-            minDiff = diff.abs();
-            index = i;
-          }
-        }
-      }
-      return minDiff < 1e-6 ? index : -1;
-    }
-    return widget.values.indexOf(value);
-  }
-
-  void _initController() {
-    int initialIndex = _findIndex(widget.currentValue);
-    if (initialIndex == -1) initialIndex = 0;
-    _scrollController = FixedExtentScrollController(initialItem: initialIndex);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ExposureDial<T> oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.values != widget.values) {
-      _scrollController.dispose();
-      _initController();
-    } else if (oldWidget.currentValue != widget.currentValue) {
-      int targetIndex = _findIndex(widget.currentValue);
-      if (targetIndex != -1 && _scrollController.hasClients) {
-        if (widget.isTarget || widget.isLockedByVideo) {
-          _scrollController.animateToItem(
-            targetIndex,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-          );
-        } else if (_scrollController.selectedItem != targetIndex) {
-          _scrollController.jumpToItem(targetIndex);
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).primaryColor;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              widget.title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.color?.withOpacity(0.5),
-                letterSpacing: 2,
-              ),
-            ),
-            if (widget.isLockedByVideo)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(LucideIcons.video, size: 12, color: Colors.amber),
-                    SizedBox(width: 4),
-                    Text(
-                      'FPS LOCKED',
-                      style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (widget.showTargetToggle)
-              GestureDetector(
-                onTap: widget.onTargetSelected,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.isTarget
-                        ? primary
-                        : Theme.of(context).dividerColor.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    widget.isTarget ? 'AUTO' : 'SELECT',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                      color: widget.isTarget
-                          ? Colors.black
-                          : Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.color?.withOpacity(0.7),
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'FILM STOCK',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10,
+                    color: isDark
+                        ? const Color(0xFFACABAA)
+                        : const Color(0xFF757575),
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
                   ),
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        AbsorbPointer(
-          absorbing: widget.isTarget || widget.isLockedByVideo,
-          child: widget.isTarget ? _buildAutoDisplay(primary) : _buildDial(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAutoDisplay(Color primary) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      decoration: BoxDecoration(
-        color: primary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: primary.withOpacity(0.3)),
-      ),
-      child: Center(
-        child: Consumer<ExposureState>(
-          builder: (context, state, _) {
-            final isErr = state.effectiveLux <= 0;
-            return Text(
-              isErr ? 'Err' : widget.formatValue(widget.currentValue),
-              style: TextStyle(
-                fontSize: 32,
-                fontFamily: 'Courier',
-                fontWeight: FontWeight.w600,
-                color: isErr ? Colors.red : primary,
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDial() {
-    return SizedBox(
-      height: 90,
-      width: double.infinity,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 140,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).dividerColor.withOpacity(0.1),
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                const SizedBox(height: 4),
+                Text(
+                  state.selectedFilm?.name.toUpperCase() ?? 'NONE',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: state.primaryColor,
+                  ),
                 ),
               ],
             ),
-          ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 140,
-              height: double.infinity,
-              foregroundDecoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.8),
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.8),
-                  ],
-                  stops: const [0.0, 0.35, 0.65, 1.0],
+            Row(
+              children: [
+                if (state.selectedFilm != null)
+                  IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      color: isDark
+                          ? const Color(0xFFACABAA)
+                          : const Color(0xFF757575),
+                    ),
+                    onPressed: () => state.selectFilm(null),
+                  ),
+                Icon(
+                  Icons.camera_roll,
+                  color: isDark
+                      ? const Color(0xFFACABAA)
+                      : const Color(0xFF757575),
                 ),
-              ),
-              child: RotatedBox(
-                quarterTurns: -1,
-                child: ListWheelScrollView.useDelegate(
-                  controller: _scrollController,
-                  itemExtent: 80,
-                  physics: const FixedExtentScrollPhysics(),
-                  diameterRatio: 1.8,
-                  magnification: 1.3,
-                  useMagnifier: true,
-                  onSelectedItemChanged: (index) {
-                    if (!widget.isLockedByVideo && !widget.isTarget) {
-                      widget.onValueChanged(widget.values[index]);
-                    }
-                  },
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: widget.values.length,
-                    builder: (context, index) {
-                      final val = widget.values[index];
-                      final isSelected = val == widget.currentValue;
-                      return RotatedBox(
-                        quarterTurns: 1,
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                widget.formatValue(val),
-                                maxLines: 1,
-                                style: TextStyle(
-                              fontSize: 24,
-                              fontFamily: 'Courier',
-                              fontWeight: isSelected
-                                  ? FontWeight.w900
-                                  : FontWeight.w500,
-                                color: isSelected
-                                    ? (widget.isLockedByVideo
-                                        ? Colors.amber
-                                        : Theme.of(context)
-                                            .textTheme
-                                            .bodyLarge
-                                            ?.color)
-                                    : Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.color
-                                        ?.withOpacity(0.3),
-                                ),
-                              ),
-                            ),
-                          ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExposureCompensationDialog(
+    BuildContext context,
+    ExposureState state,
+  ) {
+    _showExpCompDialog(context, state);
+  }
+
+  Widget _buildProBottomNav(BuildContext context, ExposureState state) {
+    return Positioned(
+      bottom: 24,
+      left: 24,
+      right: 24,
+      child: Container(
+        height: 72,
+        decoration: BoxDecoration(
+          color: const Color(0xFF131313).withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(
+                    left: 8,
+                    top: 8,
+                    bottom: 8,
+                    right: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: state.primaryColor,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: state.primaryColor.withValues(alpha: 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.speed, color: Colors.black, size: 28),
+                      const SizedBox(height: 2),
+                      Text(
+                        'MEASURE',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                          letterSpacing: 1.5,
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            top: 4,
-            child: Container(width: 2, height: 10, color: Colors.red),
-          ),
-          Positioned(
-            bottom: 4,
-            child: Container(width: 2, height: 10, color: Colors.red),
-          ),
-        ],
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          const SettingsScreen(),
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                        const begin = Offset(0, 1);
+                        const end = Offset.zero;
+                        const curve = Curves.easeOutQuint;
+                        var tween = Tween(begin: begin, end: end)
+                            .chain(CurveTween(curve: curve));
+                        return SlideTransition(
+                          position: animation.drive(tween),
+                          child: child,
+                        );
+                      },
+                    ),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(
+                    left: 4,
+                    top: 8,
+                    bottom: 8,
+                    right: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.settings,
+                        color: Color(0xFF757575),
+                        size: 28,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'SETTINGS',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF757575),
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// Helper top-level functions
-Widget _buildDiagnosticRow(BuildContext context, String label, String value, Color color) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5))),
-        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
-      ],
-    ),
-  );
+// --- Helper Components & Dialogs ---
+
+class _BackgroundPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF484848).withValues(alpha: 0.02)
+      ..strokeWidth = 1;
+    const double spacing = 20;
+    for (double i = 0; i < size.width; i += spacing) {
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
+    }
+    for (double i = 0; i < size.height; i += spacing) {
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 
-void _showFpsDialog(BuildContext context, ExposureState state) {
+void _showExpCompDialog(BuildContext context, ExposureState state) {
+  final isDark = state.themeMode == ThemeMode.dark;
   showModalBottomSheet(
     context: context,
-    backgroundColor: Colors.transparent,
-    builder: (context) => Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Video Frame Rate',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                    if (state.fpsOption != null)
-                      TextButton(
-                        onPressed: () {
-                          state.setFpsOption(null);
-                          Navigator.pop(context);
-                        },
-                        child: const Text('DISABLE'),
-                      ),
-                  ],
+    backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (context) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'EXPOSURE COMPENSATION',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  color: state.primaryColor,
+                  onPressed: () => state.setExposureCompensation(
+                    state.exposureCompensation - 0.3,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: state.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)} EV',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: state.primaryColor,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  color: state.primaryColor,
+                  onPressed: () => state.setExposureCompensation(
+                    state.exposureCompensation + 0.3,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => state.setExposureCompensation(0.0),
+              child: Text(
+                'RESET TO ZERO',
+                style: TextStyle(
+                  color: state.primaryColor.withValues(alpha: 0.5),
                 ),
               ),
-              ...FpsOption.values.map((opt) => ListTile(
-                    leading: Icon(LucideIcons.video,
-                        color: state.fpsOption == opt
-                            ? state.primaryColor
-                            : null),
-                    title: Text(opt.label),
-                    subtitle: Text(
-                        'Shutter locked to ${ExposureCalculator.formatShutterSpeed(opt.shutterSpeed)}'),
-                    trailing: state.fpsOption == opt
-                        ? Icon(LucideIcons.check, color: state.primaryColor)
-                        : null,
-                    onTap: () {
-                      state.setFpsOption(opt);
-                      Navigator.pop(context);
-                    },
-                  )),
-              const SizedBox(height: 16),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+          ],
         ),
-      ),
-    ),
+      );
+    },
   );
 }
+
 void _showSensorSupportAlert(BuildContext context, ExposureState state) {
-  state.markSensorAlertShown();
+  final isDark = state.themeMode == ThemeMode.dark;
   showDialog(
     context: context,
-    barrierDismissible: false,
     builder: (context) => AlertDialog(
-      backgroundColor: const Color(0xFF121212),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(
-        children: [
-          Icon(LucideIcons.alertTriangle, color: Colors.red),
-          SizedBox(width: 12),
-          Text('Sensor Missing', style: TextStyle(color: Colors.white)),
-        ],
+      backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
+      title: Text(
+        'No Sensor Detected',
+        style: GoogleFonts.spaceGrotesk(
+          color: isDark ? Colors.white : Colors.black,
+          fontWeight: FontWeight.bold,
+        ),
       ),
-      content: const Text(
-        'Your device does not seem to have a physical light sensor, or it is not accessible.\n\nNote: Emulators and some tablets do not have light sensors.',
-        style: TextStyle(color: Colors.white70),
+      content: Text(
+        'This app requires an ambient light sensor. Your device does not report one. Calculations will be simulated.',
+        style: GoogleFonts.spaceGrotesk(
+          color: isDark ? const Color(0xFFACABAA) : const Color(0xFF757575),
+        ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('I UNDERSTAND', style: TextStyle(color: state.primaryColor)),
+          onPressed: () {
+            state.markSensorAlertShown();
+            Navigator.pop(context);
+          },
+          child: Text(
+            'UNDERSTOOD',
+            style: TextStyle(color: state.primaryColor),
+          ),
         ),
       ],
     ),
   );
 }
 
-void _showColorPicker(BuildContext context, ExposureState state) {
-  Color pickerColor = state.primaryColor;
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: const Color(0xFF121212),
-      title: const Text('Pick Accent Color', style: TextStyle(color: Colors.white)),
-      content: SingleChildScrollView(
-        child: ColorPicker(
-          pickerColor: pickerColor,
-          onColorChanged: (color) => pickerColor = color,
-          enableAlpha: false,
-          displayThumbColor: true,
-          paletteType: PaletteType.hsvWithHue,
-          pickerAreaHeightPercent: 0.8,
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('CANCEL', style: TextStyle(color: Colors.white60)),
-        ),
-        TextButton(
-          onPressed: () {
-            state.setPrimaryColor(pickerColor);
-            Navigator.pop(context);
-          },
-          child: Text('SELECT', style: TextStyle(color: state.primaryColor)),
-        ),
-      ],
-    ),
-  );
+class HardwareGrainPainter extends CustomPainter {
+  final double density;
+  HardwareGrainPainter({this.density = 0.2});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final random = math.Random(1337);
+    final activeColor = Colors.black.withValues(alpha: 0.1);
+    final paint = Paint()
+      ..color = activeColor
+      ..strokeWidth = 1.0;
+
+    int dotCount = (size.width * size.height * density).toInt();
+    for (int i = 0; i < dotCount; i++) {
+      double x = random.nextDouble() * size.width;
+      double y = random.nextDouble() * size.height;
+      canvas.drawPoints(ui.PointMode.points, [Offset(x, y)], paint);
+    }
+
+    final highlightPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.05)
+      ..strokeWidth = 1.0;
+    for (int i = 0; i < dotCount ~/ 2; i++) {
+      double x = random.nextDouble() * size.width;
+      double y = random.nextDouble() * size.height;
+      canvas.drawPoints(ui.PointMode.points, [Offset(x, y)], highlightPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(HardwareGrainPainter oldDelegate) => false;
+}
+
+class ColorNoisePainter extends CustomPainter {
+  final double density;
+  ColorNoisePainter({this.density = 0.2});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final random = math.Random(420);
+
+    final redPaint = Paint()
+      ..color = const Color(0xFFFF0000).withValues(alpha: 0.04)
+      ..strokeWidth = 1.0;
+    final greenPaint = Paint()
+      ..color = const Color(0xFF00FF00).withValues(alpha: 0.04)
+      ..strokeWidth = 1.0;
+    final bluePaint = Paint()
+      ..color = const Color(0xFF0000FF).withValues(alpha: 0.04)
+      ..strokeWidth = 1.0;
+
+    int clusterCount = (size.width * size.height * density / 3).toInt();
+    for (int i = 0; i < clusterCount; i++) {
+      double x = random.nextDouble() * size.width;
+      double y = random.nextDouble() * size.height;
+      canvas.drawPoints(ui.PointMode.points, [Offset(x, y)], redPaint);
+      canvas.drawPoints(ui.PointMode.points, [Offset(x + 1, y)], greenPaint);
+      canvas.drawPoints(ui.PointMode.points, [Offset(x, y + 1)], bluePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(ColorNoisePainter oldDelegate) => false;
 }

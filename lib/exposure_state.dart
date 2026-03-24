@@ -1,14 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ambient_light/ambient_light.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exposure_calculator.dart';
+import 'film_database.dart';
 
-class ExposureState extends ChangeNotifier {
+class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<double>? _subscription;
+  StreamSubscription<BatteryState>? _batteryStateSubscription;
+  Timer? _batteryTimer;
   bool _hasSensor = true;
   bool get hasSensor => _hasSensor;
+  String? _sensorName;
+  String? get sensorName => _sensorName;
   
   DateTime? _lastUpdate;
   DateTime? get lastUpdate => _lastUpdate;
@@ -19,6 +26,12 @@ class ExposureState extends ChangeNotifier {
   bool _hasShownSensorAlert = false;
   bool get hasShownSensorAlert => _hasShownSensorAlert;
 
+  final Battery _battery = Battery();
+  int _batteryLevel = 0;
+  int get batteryLevel => _batteryLevel;
+  BatteryState _currentBatteryState = BatteryState.unknown;
+  BatteryState get currentBatteryState => _currentBatteryState;
+
   void markSensorAlertShown() {
     _hasShownSensorAlert = true;
     notifyListeners();
@@ -26,6 +39,9 @@ class ExposureState extends ChangeNotifier {
 
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
+
+  FilmStock? _selectedFilm;
+  FilmStock? get selectedFilm => _selectedFilm;
 
   double _lockedLux = 0.0;
   bool _isLocked = false;
@@ -41,8 +57,28 @@ class ExposureState extends ChangeNotifier {
   double _aperture = ExposureCalculator.apertureValues[6]; // 2.8
   double _shutterSpeed = ExposureCalculator.shutterValues[10]; // 1/30
 
-  // Standard EV
-  double get ev => ExposureCalculator.calculateEv(effectiveLux, ndFilter: _ndFilter);
+  // Standard EV recalibrated for film overexposure and manual compensation
+  double get ev {
+    double baseEv = ExposureCalculator.calculateEv(effectiveLux, ndFilter: _ndFilter);
+    baseEv -= _exposureCompensation;
+    if (_selectedFilm != null) {
+      baseEv -= _selectedFilm!.recommendedOverexposure;
+    }
+    return baseEv;
+  }
+
+  double _exposureCompensation = 0.0;
+  double get exposureCompensation => _exposureCompensation;
+
+  void setExposureCompensation(double value) {
+    if (_exposureCompensation != value) {
+      _exposureCompensation = value;
+      _prefs.setDouble('exposureCompensation', value);
+      _triggerHaptic();
+      _recalculate();
+      notifyListeners();
+    }
+  }
 
   int get iso => _iso;
   double get aperture => _aperture;
@@ -69,23 +105,17 @@ class ExposureState extends ChangeNotifier {
   bool _hapticsEnabled = true;
   bool get hapticsEnabled => _hapticsEnabled;
 
-  bool _useDialUi = true;
-  bool get useDialUi => _useDialUi;
-
   bool _useHalfSteps = false;
   bool get useHalfSteps => _useHalfSteps;
-
-  bool _showBottomBar = true;
-  bool get showBottomBar => _showBottomBar;
 
   bool _isPureBlack = true;
   bool get isPureBlack => _isPureBlack;
 
-  bool _showStatusBar = true;
-  bool get showStatusBar => _showStatusBar;
-
   Color _primaryColor = const Color(0xFFFFB300); // Default Amber
   Color get primaryColor => _primaryColor;
+
+  bool _hideStatusBar = false;
+  bool get hideStatusBar => _hideStatusBar;
 
   void toggleTheme() {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
@@ -101,12 +131,61 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleDialStyle() {
-    _useDialUi = !_useDialUi;
-    _prefs.setBool('useDialUi', _useDialUi);
+  void togglePureBlack() {
+    _isPureBlack = !_isPureBlack;
+    _prefs.setBool('isPureBlack', _isPureBlack);
     _triggerHaptic();
     notifyListeners();
   }
+
+  void toggleStatusBar() {
+    _hideStatusBar = !_hideStatusBar;
+    _prefs.setBool('hideStatusBar', _hideStatusBar);
+    _applyStatusBar();
+    _triggerHaptic();
+    notifyListeners();
+  }
+
+  void _applyStatusBar() {
+    if (_hideStatusBar) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+    }
+  }
+
+  void resetDefaults() {
+    _iso = isoValues[2]; // 160
+    _aperture = apertureValues[6]; // f/2.8
+    _shutterSpeed = shutterValues[10]; // 1/30
+    _exposureCompensation = 0.0;
+    _prefs.setInt('iso', _iso);
+    _prefs.setDouble('aperture', _aperture);
+    _prefs.setDouble('shutterSpeed', _shutterSpeed);
+    _prefs.setDouble('exposureCompensation', _exposureCompensation);
+    _hideStatusBar = false;
+    _prefs.setBool('hideStatusBar', false);
+    _applyStatusBar();
+    _triggerHaptic(light: true);
+    _recalculate();
+    notifyListeners();
+  }
+
+  /// Wipes every saved preference and restarts the Android Activity.
+  Future<void> resetAndRestart() async {
+    await _prefs.clear();
+    const platform = MethodChannel('com.arWRKS.lelemeter/sensor');
+    try {
+      await platform.invokeMethod('restartApp');
+    } catch (e) {
+      // Fallback if native restart fails - at least apply in-memory defaults
+      debugPrint('Could not restart app natively: $e');
+      resetDefaults();
+    }
+  }
+
+
+  // Removed duplicates
 
   void toggleHalfSteps() {
     _useHalfSteps = !_useHalfSteps;
@@ -122,36 +201,6 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleBottomBar() {
-    _showBottomBar = !_showBottomBar;
-    _prefs.setBool('showBottomBar', _showBottomBar);
-    _triggerHaptic();
-    notifyListeners();
-  }
-
-  void togglePureBlack() {
-    _isPureBlack = !_isPureBlack;
-    _prefs.setBool('isPureBlack', _isPureBlack);
-    _triggerHaptic();
-    notifyListeners();
-  }
-
-  void toggleStatusBar() {
-    _showStatusBar = !_showStatusBar;
-    _prefs.setBool('showStatusBar', _showStatusBar);
-    _applyStatusBar();
-    _triggerHaptic();
-    notifyListeners();
-  }
-
-  void _applyStatusBar() {
-    if (_showStatusBar) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
-  }
-
   void setPrimaryColor(Color color) {
     _primaryColor = color;
     _prefs.setInt('primaryColor', color.value);
@@ -160,10 +209,16 @@ class ExposureState extends ChangeNotifier {
   }
 
   void setCalibrationFactor(double factor) {
-    _calibrationFactor = factor;
-    _prefs.setDouble('calibrationFactor', factor);
+    _calibrationFactor = factor.clamp(0.1, 5.0);
+    _prefs.setDouble('calibrationFactor', _calibrationFactor);
+    _triggerHaptic(light: true);
     _recalculate();
     notifyListeners();
+  }
+
+  void resetCalibration() {
+    setCalibrationFactor(1.0);
+    _triggerHaptic();
   }
 
   List<int> get isoValues => _useHalfSteps ? ExposureCalculator.isoValuesHalf : ExposureCalculator.isoValues;
@@ -182,6 +237,21 @@ class ExposureState extends ChangeNotifier {
 
   ExposureState() {
     _initPrefsAndSensor();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed, reinitializing sensor...');
+      _initSensor();
+      _initBattery();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      debugPrint('App backgrounded, stopping sensor...');
+      _subscription?.cancel();
+      _isListening = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _initPrefsAndSensor() async {
@@ -190,11 +260,9 @@ class ExposureState extends ChangeNotifier {
     // Load saved settings
     _themeMode = (_prefs.getBool('isDarkMode') ?? true) ? ThemeMode.dark : ThemeMode.light;
     _hapticsEnabled = _prefs.getBool('hapticsEnabled') ?? true;
-    _useDialUi = _prefs.getBool('useDialUi') ?? true;
     _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
-    _showBottomBar = _prefs.getBool('showBottomBar') ?? true;
     _isPureBlack = _prefs.getBool('isPureBlack') ?? true;
-    _showStatusBar = _prefs.getBool('showStatusBar') ?? true;
+    _hideStatusBar = _prefs.getBool('hideStatusBar') ?? false;
     _applyStatusBar();
     
     _iso = _prefs.getInt('iso') ?? isoValues[2];
@@ -211,6 +279,16 @@ class ExposureState extends ChangeNotifier {
     _primaryColor = Color(colorValue);
 
     _calibrationFactor = _prefs.getDouble('calibrationFactor') ?? 1.0;
+    _exposureCompensation = _prefs.getDouble('exposureCompensation') ?? 0.0;
+
+    String filmName = _prefs.getString('selectedFilm') ?? '';
+    if (filmName.isNotEmpty) {
+      try {
+        _selectedFilm = FilmDatabase.stocks.firstWhere((f) => f.name == filmName);
+      } catch (_) {
+        _selectedFilm = null;
+      }
+    }
 
     String fpsStr = _prefs.getString('fpsOption') ?? '';
     if (fpsStr.isNotEmpty) {
@@ -223,6 +301,44 @@ class ExposureState extends ChangeNotifier {
     notifyListeners();
     
     _initSensor();
+    _initBattery();
+  }
+
+  Future<void> _initBattery() async {
+    // Cancel any existing subscription/timer before reinit
+    _batteryStateSubscription?.cancel();
+    _batteryTimer?.cancel();
+
+    // Initial read
+    try {
+      _batteryLevel = await _battery.batteryLevel;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Could not get battery level: $e');
+    }
+
+    // Listen for charging state changes (plugged in / unplugged)
+    // and refresh the level immediately when that happens
+    _batteryStateSubscription =
+        _battery.onBatteryStateChanged.listen((BatteryState state) async {
+      _currentBatteryState = state;
+      try {
+        _batteryLevel = await _battery.batteryLevel;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Battery state update error: $e');
+      }
+    });
+
+    // Poll every 60 seconds so the % stays fresh even with no state change
+    _batteryTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
+      try {
+        _batteryLevel = await _battery.batteryLevel;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Battery poll error: $e');
+      }
+    });
   }
 
   void _initSensor() {
@@ -246,7 +362,10 @@ class ExposureState extends ChangeNotifier {
         if (lux == null) {
           _hasSensor = false;
           _errorMessage = 'No light sensor detected on this device.';
+          _sensorName = "SIMULATED / NOT DETECTED";
           notifyListeners();
+        } else {
+          _fetchSensorName();
         }
       });
     } catch (e) {
@@ -255,8 +374,33 @@ class ExposureState extends ChangeNotifier {
     }
   }
 
+  Future<void> _fetchSensorName() async {
+    const platform = MethodChannel('com.arWRKS.lelemeter/sensor');
+    try {
+      final String? name = await platform.invokeMethod('getSensorName');
+      _sensorName = name;
+      notifyListeners();
+    } on MissingPluginException catch (_) {
+      debugPrint("MissingPluginException: Rebuild required to pick up native changes.");
+      _sensorName = "GENERIC (REBUILD REQUIRED)";
+      notifyListeners();
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get sensor name: '${e.message}'.");
+      _sensorName = "GENERIC SENSOR";
+      notifyListeners();
+    }
+  }
+
   void reinitializeSensor() {
     _errorMessage = '';
+    _initSensor();
+    notifyListeners();
+  }
+
+  void resetSensor() {
+    _triggerHaptic();
+    _errorMessage = '';
+    _currentLux = 0.0;
     _initSensor();
     notifyListeners();
   }
@@ -290,12 +434,36 @@ class ExposureState extends ChangeNotifier {
     if (_iso != newIso) {
       _iso = newIso;
       _prefs.setInt('iso', newIso);
+      _selectedFilm = null; // Reset selected film if ISO is manually changed
+      _prefs.remove('selectedFilm');
       _triggerHaptic();
       if (_target == CalculationTarget.iso) {
         setTarget(CalculationTarget.shutter);
       }
       _recalculate();
     }
+    notifyListeners();
+  }
+
+  void selectFilm(FilmStock? film) {
+    _selectedFilm = film;
+    if (film != null) {
+      _prefs.setString('selectedFilm', film.name);
+      
+      // If ISO was the calculation target, switch to shutter
+      if (_target == CalculationTarget.iso) {
+        _target = CalculationTarget.shutter;
+        _prefs.setString('target', 'shutter');
+      }
+
+      // Set ISO to film's box speed (LOCKED)
+      _iso = ExposureCalculator.findClosest(film.iso.toDouble(), isoValues).toInt();
+      _prefs.setInt('iso', _iso);
+    } else {
+      _prefs.remove('selectedFilm');
+    }
+    _triggerHaptic();
+    _recalculate();
     notifyListeners();
   }
 
@@ -353,30 +521,47 @@ class ExposureState extends ChangeNotifier {
   }
 
   void _recalculate() {
-    if (effectiveLux <= 0) return;
+    double lux = effectiveLux;
+    // Total exposure offset in stops (Manual EV Comp + Film Overexposure)
+    double totalOffset = _exposureCompensation;
+    if (_selectedFilm != null) {
+      totalOffset += _selectedFilm!.recommendedOverexposure;
+    }
+
+    // Apply total offset to lux BEFORE calculations
+    // +1 stop extra exposure = telling the meter it's darker (lux / 2)
+    if (totalOffset != 0) {
+      double factor = math.pow(2.0, -totalOffset).toDouble();
+      lux *= factor;
+    }
+
+    if (lux <= 0) return;
 
     switch (_target) {
       case CalculationTarget.shutter:
         if (_fpsOption == null) {
-          _shutterSpeed = ExposureCalculator.calculateShutterSpeed(effectiveLux, _aperture, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
+          _shutterSpeed = ExposureCalculator.calculateShutterSpeed(lux, _aperture, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         } else {
           // If FPS is locked but target is shutter (rare edge case), fallback to calculating ISO
           _target = CalculationTarget.iso;
-          _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
+          _iso = ExposureCalculator.calculateIso(lux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         }
         break;
       case CalculationTarget.aperture:
-        _aperture = ExposureCalculator.calculateAperture(effectiveLux, _shutterSpeed, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
+        _aperture = ExposureCalculator.calculateAperture(lux, _shutterSpeed, _iso, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         break;
       case CalculationTarget.iso:
-        _iso = ExposureCalculator.calculateIso(effectiveLux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
+        _iso = ExposureCalculator.calculateIso(lux, _aperture, _shutterSpeed, ndFilter: _ndFilter, halfSteps: _useHalfSteps);
         break;
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
+    _batteryStateSubscription?.cancel();
+    _batteryTimer?.cancel();
     super.dispose();
   }
 }

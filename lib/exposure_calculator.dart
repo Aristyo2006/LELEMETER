@@ -140,4 +140,20 @@ class ExposureCalculator {
     double exactIso = (aperture * aperture * calibrationConstant) / (effectiveLux * shutterSpeed);
     return findClosest(exactIso, options);
   }
+
+  static int getNdStops(NdFilter filter) {
+    switch (filter) {
+      case NdFilter.none: return 0;
+      case NdFilter.nd2: return 1;
+      case NdFilter.nd4: return 2;
+      case NdFilter.nd8: return 3;
+      case NdFilter.nd16: return 4;
+      case NdFilter.nd32: return 5;
+      case NdFilter.nd64: return 6;
+      case NdFilter.nd128: return 7;
+      case NdFilter.nd256: return 8;
+      case NdFilter.nd512: return 9;
+      case NdFilter.nd1000: return 10;
+    }
+  }
 }
