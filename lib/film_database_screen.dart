@@ -1,10 +1,10 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'exposure_state.dart';
 import 'film_database.dart';
+import 'ui_helpers.dart';
 
 class FilmDatabaseScreen extends StatefulWidget {
   const FilmDatabaseScreen({super.key});
@@ -13,15 +13,31 @@ class FilmDatabaseScreen extends StatefulWidget {
   State<FilmDatabaseScreen> createState() => _FilmDatabaseScreenState();
 }
 
-class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
+class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
+    with TickerProviderStateMixin {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   FilmType? _activeFilter; // null = show all
   String? _activeBrandFilter; // null = show all brands
+  late final AnimationController _entranceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    // Start animation shortly after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _entranceController.forward();
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -29,7 +45,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<ExposureState>();
     final primaryColor = state.primaryColor;
-    final isDark = state.themeMode == ThemeMode.dark;
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
     final backgroundColor =
         isDark ? const Color(0xFF0E0E0E) : Colors.white;
     final surfaceHigh =
@@ -59,17 +77,16 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
       sortedFilms.addAll(groupedStocks[brand]!);
     }
 
+    final barHeight = 64 + MediaQuery.of(context).padding.top;
+
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: Column(
+      body: Stack(
         children: [
-          // ─── Top App Bar ───────────────────────────────────────────────
-          _buildTopBar(context, primaryColor, isDark, surfaceHigh),
-
-          // ─── Content ───────────────────────────────────────────────────
-          Expanded(
+          // ─── Content (First in Stack, so it sits behind the bar) ───────
+          Positioned.fill(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: EdgeInsets.fromLTRB(16, barHeight + 16, 16, 100),
               children: [
                 // Currently Loaded Banner
                 _buildCurrentlyLoaded(state, primaryColor, isDark),
@@ -90,7 +107,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
                 // Library Header
                 Text(
                   'LIBRARY',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 3,
@@ -101,32 +118,20 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Film Grid
+                // Film Shelf
                 sortedFilms.isEmpty
                     ? _buildEmptyState(primaryColor)
-                    : GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.78,
-                        ),
-                        itemCount: sortedFilms.length,
-                        itemBuilder: (context, index) {
-                          return _buildFilmCard(
-                            context,
-                            sortedFilms[index],
-                            state,
-                            primaryColor,
-                            isDark,
-                          );
-                        },
-                      ),
+                    : _buildShelf(context, groupedStocks, sortedBrands, state, primaryColor, isDark),
               ],
             ),
+          ),
+
+          // ─── Top App Bar (Second in Stack, so it overlays the content) ──
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildTopBar(context, state, primaryColor, isDark, surfaceHigh),
           ),
         ],
       ),
@@ -135,92 +140,107 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
 
   Widget _buildTopBar(
     BuildContext context,
+    ExposureState state,
     Color primaryColor,
     bool isDark,
     Color surfaceHigh,
   ) {
+    return ClipRect(
+      child: state.enableBlur
+          ? BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: _buildTopBarContent(context, state, isDark, surfaceHigh),
+            )
+          : _buildTopBarContent(context, state, isDark, surfaceHigh),
+    );
+  }
+
+  Widget _buildTopBarContent(
+    BuildContext context,
+    ExposureState state,
+    bool isDark,
+    Color surfaceHigh,
+  ) {
     return Container(
-      height: 64 + MediaQuery.of(context).padding.top,
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2020) : surfaceHigh,
-        border: isDark
-            ? null
-            : const Border(
-                bottom: BorderSide(
-                  color: Color(0xFFE0E0E0),
-                  width: 1,
-                ),
-              ),
-        boxShadow: isDark
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 8),
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF2B2C2C)
-                    : const Color(0xFFE0E0E0),
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 4,
-                    offset: const Offset(1.5, 2.5),
-                  ),
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    blurRadius: 1,
-                    offset: const Offset(-0.5, -0.5),
-                    blurStyle: BlurStyle.inner,
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.arrow_back,
-                color: isDark ? Colors.white70 : Colors.black87,
-                size: 20,
+          height: 64 + MediaQuery.of(context).padding.top,
+          padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+          decoration: BoxDecoration(
+            color: (isDark ? const Color(0xFF1F2020) : surfaceHigh)
+                .withValues(alpha: state.enableBlur ? 0.82 : 1.0),
+            image: skeuomorphicNoise,
+            border: Border(
+              bottom: BorderSide(
+                color: isDark 
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.08),
+                width: 1,
               ),
             ),
           ),
-          const Spacer(),
-          Row(
+          child: Stack(
             children: [
-              Icon(
-                Icons.camera_roll,
-                color: primaryColor,
-                size: 20,
+              // Back Button (Aligned Left)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF2B2C2C)
+                          : const Color(0xFFE0E0E0),
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 4,
+                          offset: const Offset(1.5, 2.5),
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          blurRadius: 1,
+                          offset: const Offset(-0.5, -0.5),
+                          blurStyle: BlurStyle.inner,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      size: 20,
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'FILM STOCK',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 4,
-                  color: isDark ? Colors.white : Colors.black,
+              // Absolute Centered Title
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.camera_roll,
+                      color: state.primaryColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'FILM STOCK',
+                      style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 4,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const Spacer(),
-          const SizedBox(width: 56),
-        ],
-      ),
-    );
+        );
   }
 
   Widget _buildCurrentlyLoaded(
@@ -266,7 +286,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
         children: [
           Text(
             'CURRENTLY LOADED',
-            style: GoogleFonts.spaceGrotesk(
+            style: TextStyle(fontFamily: 'SpaceGrotesk', 
               fontSize: 10,
               fontWeight: FontWeight.bold,
               letterSpacing: 3,
@@ -278,7 +298,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
           const SizedBox(height: 8),
           Text(
             film != null ? film.name.toUpperCase() : '--- NO FILM ---',
-            style: GoogleFonts.spaceGrotesk(
+            style: TextStyle(fontFamily: 'SpaceGrotesk', 
               fontSize: 22,
               fontWeight: FontWeight.bold,
               color: film != null ? primaryColor : const Color(0xFF767575),
@@ -293,7 +313,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
               children: [
                 Text(
                   'ISO ${film.iso}',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 11,
                     color: isDark
                         ? const Color(0xFFACABAA)
@@ -314,7 +334,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
                 ),
                 Text(
                   film.typeLabel.toUpperCase(),
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 11,
                     color: _getTypeColor(film.type),
                     letterSpacing: 1,
@@ -326,7 +346,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
           else
             Text(
               'SELECT A FILM BELOW',
-              style: GoogleFonts.spaceGrotesk(
+              style: TextStyle(fontFamily: 'SpaceGrotesk', 
                 fontSize: 11,
                 color: isDark
                     ? const Color(0xFF767575)
@@ -354,7 +374,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
                 ),
                 child: Text(
                   'UNLOAD',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
@@ -400,13 +420,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
       child: TextField(
         controller: _searchController,
         onChanged: (value) => setState(() => _searchQuery = value),
-        style: GoogleFonts.spaceGrotesk(
+        style: TextStyle(fontFamily: 'SpaceGrotesk', 
           color: isDark ? Colors.white : Colors.black,
           fontSize: 13,
         ),
         decoration: InputDecoration(
           hintText: 'Search film stock...',
-          hintStyle: GoogleFonts.spaceGrotesk(
+          hintStyle: TextStyle(fontFamily: 'SpaceGrotesk', 
             color: isDark
                 ? const Color(0xFF767575)
                 : const Color(0xFFACABAA),
@@ -546,7 +566,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
                     const SizedBox(width: 5),
                     Text(
                       f.label,
-                      style: GoogleFonts.spaceGrotesk(
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
@@ -567,7 +588,161 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
     );
   }
 
-  Widget _buildFilmCard(
+  // ─── Shelf Layout ───────────────────────────────────────────────────────────
+
+  Widget _buildShelf(
+    BuildContext context,
+    Map<String, List<FilmStock>> grouped,
+    List<String> brands,
+    ExposureState state,
+    Color primaryColor,
+    bool isDark,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: brands.map((brand) {
+        final films = grouped[brand]!;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 0),
+          child: _buildShelfRow(
+            context,
+            brand,
+            films,
+            state,
+            primaryColor,
+            isDark,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildShelfRow(
+    BuildContext context,
+    String brand,
+    List<FilmStock> films,
+    ExposureState state,
+    Color primaryColor,
+    bool isDark,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Brand label
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: Text(
+            brand.toUpperCase(),
+            style: const TextStyle(
+              fontFamily: 'SpaceGrotesk',
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2,
+              color: Color(0xFFACABAA),
+            ),
+          ),
+        ),
+        // Shelf section: films + wooden plank
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Wooden shelf back wall (full area)
+            Container(
+              height: 210,
+              decoration: BoxDecoration(
+                image: skeuomorphicNoise,
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFB5742B),
+                    Color(0xFF9A5F1F),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    offset: const Offset(0, 6),
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
+              child: CustomPaint(
+                painter: _WoodGrainPainter(),
+                child: Container(),
+              ),
+            ),
+            // Film spines row
+            SizedBox(
+              height: 190,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+                itemCount: films.length,
+                itemBuilder: (context, index) {
+                  final delay = index * 0.08;
+                  final animation = CurvedAnimation(
+                    parent: _entranceController,
+                    curve: Interval(delay.clamp(0.0, 0.8), (delay + 0.4).clamp(0.0, 1.0), curve: Curves.easeOutBack),
+                  );
+                  return AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, 40 * (1 - animation.value)),
+                        child: Opacity(
+                          opacity: animation.value.clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _buildFilmSpine(context, films[index], state, primaryColor, isDark),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Shelf plank (bottom edge lip)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 18,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(6),
+                    bottomRight: Radius.circular(6),
+                  ),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF7A4210),
+                      Color(0xFF5C2F08),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      offset: const Offset(0, 4),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildFilmSpine(
     BuildContext context,
     FilmStock film,
     ExposureState state,
@@ -575,258 +750,469 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
     bool isDark,
   ) {
     final isSelected = state.selectedFilm?.name == film.name;
-    final typeColor = _getTypeColor(film.type);
+    // final isDark = state.themeMode == ThemeMode.dark; // This line was redundant as isDark is passed in
 
-    return GestureDetector(
-      onTap: () {
-        state.selectFilm(film);
-        Navigator.pop(context);
+    return Builder(
+      builder: (context) {
+        return GestureDetector(
+          onTap: () {
+            state.selectFilm(film);
+            Navigator.pop(context);
+          },
+          onLongPressStart: (d) {
+            final RenderBox? box = context.findRenderObject() as RenderBox?;
+            final Offset position = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+            final spineRect = position & (box?.size ?? Size.zero);
+            _showFilmDetail(context, film, state, primaryColor, d.globalPosition, spineRect, isDark);
+          },
+          child: _buildSpineVisuals(film, state, isDark, primaryColor, isSelected),
+        );
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
+    );
+  }
+
+  Widget _buildSpineVisuals(
+    FilmStock film,
+    ExposureState state,
+    bool isDark,
+    Color primaryColor,
+    bool isSelected, {
+    bool isHighlighted = false,
+  }) {
+    final spineColor = _getSpineColor(film.type);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: 90,
+      transform: (isSelected && !isHighlighted)
+          ? Matrix4.translationValues(0, -8, 0)
+          : Matrix4.identity(),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131313) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
+          color: spineColor,
+          image: skeuomorphicNoise,
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: isSelected
-                ? primaryColor.withValues(alpha: 0.8)
-                : (isDark ? const Color(0xFF252626) : const Color(0xFFEEEEEE)),
-            width: isSelected ? 1.5 : 1,
+                ? primaryColor
+                : Colors.black.withValues(alpha: 0.4),
+            width: isSelected ? 2 : 1,
           ),
           boxShadow: [
             if (isSelected)
               BoxShadow(
-                color: primaryColor.withValues(alpha: 0.15),
-                blurRadius: 15,
-                spreadRadius: 0,
+                color: primaryColor.withValues(alpha: 0.7),
+                blurRadius: 12,
+                spreadRadius: 1,
               ),
             BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.12),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-            BoxShadow(
-              color: Colors.white.withValues(alpha: isDark ? 0.04 : 0.7),
-              blurRadius: 1,
-              offset: const Offset(0, 1),
-              blurStyle: BlurStyle.inner,
+              color: Colors.black.withValues(alpha: 0.4),
+              offset: const Offset(2, 3),
+              blurRadius: 4,
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Film thumbnail / color swatch area
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(7),
-                    topRight: Radius.circular(7),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: _getFilmGradient(film.type, isDark),
-                  ),
+            // Top color stripe
+            Container(
+              height: 8,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(3),
+                  topRight: Radius.circular(3),
                 ),
-                child: Stack(
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Grain texture overlay
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: 0.5,
-                        child: CustomPaint(
-                          painter: _MiniGrainPainter(
-                            seed: film.name.hashCode,
-                            color: _getFilmGradient(film.type, isDark).last,
-                          ),
+                    // Film type icon (small)
+                    Opacity(
+                      opacity: 0.7,
+                      child: _getFilmIconWidget(film.type, size: 20),
+                    ),
+                    const SizedBox(height: 6),
+                    // ISO badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Text(
+                        '${film.iso}',
+                        style: const TextStyle(
+                          fontFamily: 'VT323',
+                          fontSize: 12,
+                          color: Colors.white,
                         ),
                       ),
                     ),
-                    // Film type icon center
-                    Center(
-                      child: Opacity(
-                        opacity: 0.25,
-                        child: _getFilmIconWidget(film.type, size: 40),
-                      ),
-                    ),
-                    // ISO badge top left
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                        child: Text(
-                          'ISO ${film.iso}',
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white70,
-                            letterSpacing: 0.5,
+                    const SizedBox(height: 4),
+                    // Film name — rotated, auto-shrinks to fit, no cutoff
+                    Expanded(
+                      child: RotatedBox(
+                        quarterTurns: 1,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            film.name.toUpperCase(),
+                            style: TextStyle(
+                              fontFamily: 'SpaceGrotesk',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ),
                       ),
                     ),
                     // Selected dot
                     if (isSelected)
-                      Positioned(
-                        bottom: 8,
-                        right: 8,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: primaryColor,
-                            boxShadow: [
-                              BoxShadow(
-                                color: primaryColor.withValues(alpha: 0.8),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    // EXP badge bottom-left
-                    if (film.recommendedOverexposure > 0)
-                      Positioned(
-                        bottom: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.65),
-                            borderRadius: BorderRadius.circular(2),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Text(
-                            'EXP +${film.recommendedOverexposure.toStringAsFixed(1)}',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFFFCD62),
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Pushable badge
-                    if (film.pushable)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                primaryColor.withValues(alpha: 0.8),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                          child: Text(
-                            'PUSH',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Bottom gradient
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: 40,
-                      child: Container(
+                      Container(
+                        width: 6,
+                        height: 6,
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              isDark
-                                  ? Colors.black.withValues(alpha: 0.7)
-                                  : Colors.black.withValues(alpha: 0.15),
-                            ],
-                          ),
+                          shape: BoxShape.circle,
+                          color: primaryColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryColor.withValues(alpha: 0.8),
+                              blurRadius: 8,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
-            // Card footer
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    film.name.toUpperCase(),
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected
-                          ? primaryColor
-                          : (isDark ? Colors.white : Colors.black),
-                      letterSpacing: 0.3,
+          ],
+      ),
+    );
+  }
+
+  void _showFilmDetail(
+    BuildContext context,
+    FilmStock film,
+    ExposureState state,
+    Color primaryColor,
+    Offset tapPosition,
+    Rect spineRect,
+    bool isDark, // Added isDark parameter
+  ) {
+    // final isDark = state.themeMode == ThemeMode.dark; // This line was redundant
+    final typeColor = _getTypeColor(film.type);
+    final spineColor = _getSpineColor(film.type);
+    const cardWidth = 260.0;
+    const arrowH = 14.0;
+    const margin = 12.0;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 180),
+      transitionBuilder: (_, anim, __, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.85, end: 1.0).animate(curved),
+            alignment: Alignment.bottomCenter,
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, _, __) {
+        final screen = MediaQuery.of(context).size;
+        // Center callout horizontally on the spine
+        final targetX = spineRect.center.dx;
+        final targetY = spineRect.top;
+
+        double left = targetX - cardWidth / 2;
+        left = left.clamp(margin, screen.width - cardWidth - margin);
+
+        // Arrow points at the center of the spine
+        final arrowRelX = ((targetX - left) / cardWidth).clamp(0.15, 0.85);
+
+        // 4px gap above/below target
+        final arrowOnBottom = targetY > (screen.height / 2);
+
+        return Stack(
+          children: [
+            // Blurred backdrop — tap to dismiss
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: state.enableBlur
+                    ? BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(color: Colors.black.withValues(alpha: 0.35)),
+                      )
+                    : Container(color: Colors.black.withValues(alpha: 0.9)),
+              ),
+            ),
+            // "Punch-through" spine duplicate (stays sharp)
+            Positioned.fromRect(
+              rect: spineRect,
+              child: IgnorePointer(
+                child: Transform.scale(
+                  scale: 1.04, // Slightly pop to show highlight
+                  child: Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryColor.withValues(alpha: 0.5),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: _buildSpineVisuals(
+                      film,
+                      state,
+                      isDark,
+                      primaryColor,
+                      state.selectedFilm?.name == film.name,
+                      isHighlighted: true,
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        film.brand,
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 9,
-                          color: isDark
-                              ? const Color(0xFF767575)
-                              : const Color(0xFFACABAA),
-                          letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            // Callout bubble (bottom-anchored if above)
+            Positioned(
+              left: left,
+              top: arrowOnBottom ? null : targetY + spineRect.height + 4,
+              bottom: arrowOnBottom ? screen.height - targetY + 4 : null,
+              width: cardWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!arrowOnBottom)
+                      CustomPaint(
+                        size: Size(cardWidth, arrowH),
+                        painter: _CalloutArrowPainter(
+                          arrowRelX: arrowRelX,
+                          color: isDark ? const Color(0xFF1A1B1B) : Colors.white,
+                          borderColor: primaryColor.withValues(alpha: 0.4),
+                          pointDown: false,
                         ),
                       ),
-                      Text(
-                        _getShortTypeLabel(film.type),
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: typeColor,
-                          letterSpacing: 0.5,
+                    // Card body
+                    Container(
+                      decoration: BoxDecoration(
+                        color: (isDark ? const Color(0xFF1A1B1B) : Colors.white)
+                            .withValues(alpha: 0.96),
+                        image: skeuomorphicNoise,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: primaryColor.withValues(alpha: 0.4),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: spineColor.withValues(alpha: 0.45),
+                            blurRadius: 28,
+                            spreadRadius: 1,
+                          ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: spineColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: spineColor.withValues(alpha: 0.6),
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Opacity(
+                                    opacity: 0.85,
+                                    child: _getFilmIconWidget(film.type, size: 20),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      film.name.toUpperCase(),
+                                      style: TextStyle(
+                                        fontFamily: 'SpaceGrotesk',
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : Colors.black,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      film.brand.toUpperCase(),
+                                      style: const TextStyle(
+                                        fontFamily: 'SpaceGrotesk',
+                                        fontSize: 9,
+                                        letterSpacing: 1.5,
+                                        color: Color(0xFFACABAA),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _buildStatChip('ISO', '${film.iso}', typeColor),
+                              _buildStatChip('TYPE', _getShortTypeLabel(film.type), typeColor),
+                              if (film.pushable)
+                                _buildStatChip('PUSH', 'YES', const Color(0xFF8EFF71)),
+                              if (film.recommendedOverexposure > 0)
+                                _buildStatChip('EXP', '+${film.recommendedOverexposure.toStringAsFixed(1)}', const Color(0xFFFFCD62)),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (film.desc.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                film.desc,
+                                style: TextStyle(
+                                  fontFamily: 'SpaceGrotesk',
+                                  fontSize: 10,
+                                  height: 1.4,
+                                  color: (isDark ? Colors.white : Colors.black)
+                                      .withValues(alpha: 0.7),
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ),
+                          GestureDetector(
+                            onTap: () {
+                              state.selectFilm(film);
+                              Navigator.pop(ctx);
+                              Navigator.pop(context);
+                            },
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: primaryColor,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'LOAD FILM',
+                                  style: TextStyle(
+                                    fontFamily: 'SpaceGrotesk',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (arrowOnBottom)
+                      CustomPaint(
+                        size: Size(cardWidth, arrowH),
+                        painter: _CalloutArrowPainter(
+                          arrowRelX: arrowRelX,
+                          color: isDark ? const Color(0xFF1A1B1B) : Colors.white,
+                          borderColor: primaryColor.withValues(alpha: 0.4),
+                          pointDown: true,
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
-        ),
+        );
+      },
+    );
+  }
+  Widget _buildStatChip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(6),
+        color: color.withValues(alpha: 0.08),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'SpaceGrotesk',
+              fontSize: 8,
+              letterSpacing: 1.5,
+              color: color.withValues(alpha: 0.7),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontFamily: 'VT323',
+              fontSize: 18,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Color _getSpineColor(FilmType type) {
+    switch (type) {
+      case FilmType.color_negative:
+        return const Color(0xFF1A3A5C);
+      case FilmType.black_white:
+        return const Color(0xFF2A2A2A);
+      case FilmType.slide:
+        return const Color(0xFF1A4A28);
+      case FilmType.cine:
+        return const Color(0xFF4A1A1A);
+    }
   }
 
   Widget _buildBrandFilterRow(Color primaryColor, bool isDark) {
@@ -924,7 +1310,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
           ),
           child: Text(
             label,
-            style: GoogleFonts.spaceGrotesk(
+            style: TextStyle(fontFamily: 'SpaceGrotesk', 
               fontSize: 9,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.8,
@@ -953,7 +1339,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
           const SizedBox(height: 12),
           Text(
             'NO FILM STOCKS FOUND',
-            style: GoogleFonts.spaceGrotesk(
+            style: TextStyle(fontFamily: 'SpaceGrotesk', 
               fontSize: 12,
               fontWeight: FontWeight.bold,
               letterSpacing: 2,
@@ -978,26 +1364,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
     }
   }
 
-  List<Color> _getFilmGradient(FilmType type, bool isDark) {
-    switch (type) {
-      case FilmType.color_negative:
-        return isDark
-            ? [const Color(0xFF2C2000), const Color(0xFF1A1200)]
-            : [const Color(0xFFFFF8E0), const Color(0xFFFFF0B0)];
-      case FilmType.black_white:
-        return isDark
-            ? [const Color(0xFF252626), const Color(0xFF131313)]
-            : [const Color(0xFFEEEEEE), const Color(0xFFD0D0D0)];
-      case FilmType.slide:
-        return isDark
-            ? [const Color(0xFF0B2000), const Color(0xFF071400)]
-            : [const Color(0xFFE8FFE0), const Color(0xFFD0F8C0)];
-      case FilmType.cine:
-        return isDark
-            ? [const Color(0xFF2C0A08), const Color(0xFF1A0505)]
-            : [const Color(0xFFFFEEEC), const Color(0xFFFFD8D4)];
-    }
-  }
+
 
   Widget _getFilmIconWidget(FilmType type, {double size = 40}) {
     switch (type) {
@@ -1038,25 +1405,73 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> {
   }
 }
 
-// Micro grain painter for cards
-class _MiniGrainPainter extends CustomPainter {
-  final int seed;
-  final Color color;
-  _MiniGrainPainter({required this.seed, required this.color});
-
+// Wooden grain painter for shelf backing
+class _WoodGrainPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final rng = seed.hashCode;
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.06)
-      ..strokeWidth = 1;
-    for (int i = 0; i < 150; i++) {
-      final x = ((rng * (i * 7 + 1)) % size.width.toInt()).abs().toDouble();
-      final y = ((rng * (i * 13 + 3)) % size.height.toInt()).abs().toDouble();
-      canvas.drawPoints(ui.PointMode.points, [Offset(x, y)], paint);
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    final grains = [
+      const Color(0xFFD4882A),
+      const Color(0xFFBE7520),
+      const Color(0xFFCF8030),
+    ];
+    for (int i = 0; i < 20; i++) {
+      paint.color = grains[i % grains.length].withValues(alpha: 0.2);
+      final y = (size.height / 20) * i;
+      final path = Path();
+      path.moveTo(0, y);
+      for (double x = 0; x < size.width; x += 30) {
+        path.cubicTo(x + 10, y - 3, x + 20, y + 3, x + 30, y);
+      }
+      canvas.drawPath(path, paint);
     }
   }
 
   @override
-  bool shouldRepaint(_MiniGrainPainter oldDelegate) => false;
+  bool shouldRepaint(_WoodGrainPainter oldDelegate) => false;
+}
+
+
+
+// iOS-style callout arrow / speech bubble triangle pointer
+class _CalloutArrowPainter extends CustomPainter {
+  final double arrowRelX;
+  final Color color;
+  final Color borderColor;
+  final bool pointDown;
+
+  const _CalloutArrowPainter({
+    required this.arrowRelX,
+    required this.color,
+    required this.borderColor,
+    required this.pointDown,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final arrowX = size.width * arrowRelX;
+    const arrowW = 18.0;
+    final fillPaint = Paint()..color = color..style = PaintingStyle.fill;
+    final strokePaint = Paint()..color = borderColor..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    final path = Path();
+    if (pointDown) {
+      path.moveTo(arrowX - arrowW / 2, 0);
+      path.lineTo(arrowX + arrowW / 2, 0);
+      path.lineTo(arrowX, size.height);
+      path.close();
+    } else {
+      path.moveTo(arrowX - arrowW / 2, size.height);
+      path.lineTo(arrowX + arrowW / 2, size.height);
+      path.lineTo(arrowX, 0);
+      path.close();
+    }
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(path, strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(_CalloutArrowPainter old) =>
+      old.arrowRelX != arrowRelX || old.pointDown != pointDown;
 }

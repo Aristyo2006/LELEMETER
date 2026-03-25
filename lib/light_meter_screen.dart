@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -9,6 +8,7 @@ import 'exposure_calculator.dart';
 import 'film_database_screen.dart';
 import 'package:flutter/services.dart';
 import 'settings_screen.dart';
+import 'ui_helpers.dart';
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
@@ -17,7 +17,9 @@ class LightMeterScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ExposureState>(
       builder: (context, state, child) {
-        final isDark = state.themeMode == ThemeMode.dark;
+        final isDark = state.themeMode == ThemeMode.system
+            ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+            : state.themeMode == ThemeMode.dark;
         return Scaffold(
           backgroundColor: isDark
               ? (state.isPureBlack ? Colors.black : const Color(0xFF1A1B1E))
@@ -39,12 +41,13 @@ class LightMeterScreen extends StatelessWidget {
                   ),
                   Column(
                     children: [
-                      _buildProHeader(context, state),
                       Expanded(
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 24,
+                          padding: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            top: 100, // Space for fixed header
+                            bottom: 120, // Space for bottom nav
                           ),
                           child: Column(
                             children: [
@@ -53,15 +56,13 @@ class LightMeterScreen extends StatelessWidget {
                               _buildQuickControls(context, state),
                               const SizedBox(height: 24),
                               _buildMechanicalInterface(context, state),
-                              const SizedBox(
-                                height: 100,
-                              ), // Space for bottom nav
                             ],
                           ),
                         ),
                       ),
                     ],
                   ),
+                  _buildProHeader(context, state),
                   _buildProBottomNav(context, state),
                 ],
               );
@@ -73,55 +74,68 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildProHeader(BuildContext context, ExposureState state) {
-    final isDark = state.themeMode == ThemeMode.dark;
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ClipRect(
+        child: state.enableBlur 
+          ? BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+              child: _buildHeaderContent(context, state, isDark),
+            )
+          : _buildHeaderContent(context, state, isDark),
+      ),
+    );
+  }
+
+  Widget _buildHeaderContent(BuildContext context, ExposureState state, bool isDark) {
     return Container(
-      height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131313) : Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.05)
+        color: isDark 
+            ? const Color(0xFF131313).withValues(alpha: state.enableBlur ? 0.7 : 1.0) 
+            : Colors.white.withValues(alpha: state.enableBlur ? 0.7 : 1.0),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark 
+                ? Colors.white.withValues(alpha: 0.05) 
                 : Colors.black.withValues(alpha: 0.05),
-            offset: const Offset(0, 1),
           ),
-        ],
+        ),
       ),
       child: SafeArea(
         bottom: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'LELEMETER',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    color: state.primaryColor,
-                    fontSize: 16,
-                    letterSpacing: -0.5,
-                  ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'LELEMETER',
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontWeight: FontWeight.bold,
+                  color: state.primaryColor,
+                  fontSize: 16,
+                  letterSpacing: -0.5,
                 ),
-              ],
-            ),
-            Row(
-              children: [
-                Text(
-                  'SYNCED',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF8EFF71),
-                    fontSize: 10,
-                    letterSpacing: 0.5,
-                  ),
+              ),
+              Text(
+                'SYNCED',
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF8EFF71),
+                  fontSize: 10,
+                  letterSpacing: 0.5,
                 ),
-                const SizedBox(width: 8),
-                Icon(Icons.sensors, size: 18, color: state.primaryColor),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -167,7 +181,7 @@ class LightMeterScreen extends StatelessWidget {
     final Color color;
 
     if (isCharging) {
-      label = '⚡CHARG';
+      label = '⚡CHRG';
       color = const Color(0xFF8EFF71); // green
     } else if (isLow) {
       label = '!LOW';
@@ -179,7 +193,7 @@ class LightMeterScreen extends StatelessWidget {
 
     return Text(
       label,
-      style: GoogleFonts.vt323(
+      style: TextStyle(fontFamily: 'VT323', 
         fontSize: 14,
         color: color,
         letterSpacing: 0.5,
@@ -195,6 +209,7 @@ class LightMeterScreen extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         color: lcdBg,
+        image: skeuomorphicNoise,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: Colors.black.withValues(alpha: 0.2),
@@ -213,138 +228,157 @@ class LightMeterScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        child: Column(
-          children: [
-            // Top Indicator Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'ISO :  ${state.iso}',
-                  style: GoogleFonts.vt323(fontSize: 14, color: lcdInk),
+      child: Stack(
+        children: [
+          // Logo Watermark (Visible when locked)
+          if (state.isLocked)
+            Positioned.fill(
+              child: Center(
+                child: Opacity(
+                  opacity: 0.1,
+                  child: Icon(
+                    Icons.lock,
+                    size: 80,
+                    color: lcdInk,
+                  ),
                 ),
+              ),
+            ),
+          
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Column(
+              children: [
+                // Top Indicator Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'ISO :  ${state.iso}',
+                      style: TextStyle(fontFamily: 'VT323', fontSize: 14, color: lcdInk),
+                    ),
+                    Row(
+                      children: [
+                        _buildBatteryIcon(state, lcdInk),
+                        const SizedBox(width: 4),
+                        _buildBatteryStatusChip(state, lcdInk),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(height: 1, color: lcdInk.withValues(alpha: 0.2)),
+                const SizedBox(height: 16),
+
+                // AT-A-GLANCE T/F ROW
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Shutter (T)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'T',
+                          style: TextStyle(fontFamily: 'VT323', fontSize: 16, color: lcdInk),
+                        ),
+                        Text(
+                          ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
+                          style: TextStyle(fontFamily: 'VT323', 
+                            fontSize: 56,
+                            height: 0.9,
+                            color: lcdInk,
+                            letterSpacing: -2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Indicator
+                    if (state.target == CalculationTarget.shutter)
+                      const Icon(Icons.arrow_left, size: 16, color: lcdInk)
+                    else if (state.target == CalculationTarget.aperture)
+                      const Icon(Icons.arrow_right, size: 16, color: lcdInk)
+                    else
+                      const SizedBox(width: 16),
+                    // Aperture (F)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'F',
+                          style: TextStyle(fontFamily: 'VT323', fontSize: 16, color: lcdInk),
+                        ),
+                        Text(
+                          ExposureCalculator.formatAperture(
+                            state.aperture,
+                          ).replaceAll('f/', ''),
+                          style: TextStyle(fontFamily: 'VT323', 
+                            fontSize: 56,
+                            height: 0.9,
+                            color: lcdInk,
+                            letterSpacing: -2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Stats & EV Row (Balanced Flex Layout)
                 Row(
                   children: [
-                    _buildBatteryIcon(state, lcdInk),
-                    const SizedBox(width: 4),
-                    _buildBatteryStatusChip(state, lcdInk),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(height: 1, color: lcdInk.withValues(alpha: 0.2)),
-            const SizedBox(height: 16),
-
-            // AT-A-GLANCE T/F ROW
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Shutter (T)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'T',
-                      style: GoogleFonts.vt323(fontSize: 16, color: lcdInk),
+                    Expanded(
+                      flex: 2,
+                      child: _buildLcdStat(
+                        'EV',
+                        state.effectiveLux <= 0
+                            ? '--.-'
+                            : state.ev.toStringAsFixed(1),
+                      ),
                     ),
-                    Text(
-                      ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
-                      style: GoogleFonts.vt323(
-                        fontSize: 56,
-                        height: 0.9,
-                        color: lcdInk,
-                        letterSpacing: -2,
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: lcdInk.withValues(alpha: 0.2),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: _buildLcdStat(
+                        'LUX',
+                        state.effectiveLux.toInt().toString(),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: lcdInk.withValues(alpha: 0.2),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: _buildLcdStat('ND', state.ndFilter.name),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: lcdInk.withValues(alpha: 0.2),
+                    ),
+                    Expanded(
+                      flex: 4,
+                      child: _buildLcdStat(
+                        'FILM',
+                        state.selectedFilm?.name ?? 'NONE',
                       ),
                     ),
                   ],
                 ),
-                // Indicator
-                if (state.target == CalculationTarget.shutter)
-                  const Icon(Icons.arrow_left, size: 16, color: lcdInk)
-                else if (state.target == CalculationTarget.aperture)
-                  const Icon(Icons.arrow_right, size: 16, color: lcdInk)
-                else
-                  const SizedBox(width: 16),
-                // Aperture (F)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'F',
-                      style: GoogleFonts.vt323(fontSize: 16, color: lcdInk),
-                    ),
-                    Text(
-                      ExposureCalculator.formatAperture(
-                        state.aperture,
-                      ).replaceAll('f/', ''),
-                      style: GoogleFonts.vt323(
-                        fontSize: 56,
-                        height: 0.9,
-                        color: lcdInk,
-                        letterSpacing: -2,
-                      ),
-                    ),
-                  ],
-                ),
+                const SizedBox(height: 24),
+                _buildExposureBar(state),
               ],
             ),
-            const SizedBox(height: 24),
-
-            // Stats & EV Row (Balanced Flex Layout)
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: _buildLcdStat(
-                    'EV',
-                    state.effectiveLux <= 0
-                        ? '--.-'
-                        : state.ev.toStringAsFixed(1),
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 16,
-                  color: lcdInk.withValues(alpha: 0.2),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: _buildLcdStat(
-                    'LUX',
-                    state.effectiveLux.toInt().toString(),
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 16,
-                  color: lcdInk.withValues(alpha: 0.2),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: _buildLcdStat('ND', state.ndFilter.name),
-                ),
-                Container(
-                  width: 1,
-                  height: 16,
-                  color: lcdInk.withValues(alpha: 0.2),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: _buildLcdStat(
-                    'FILM',
-                    state.selectedFilm?.name ?? 'NONE',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _buildExposureBar(state),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -355,11 +389,11 @@ class LightMeterScreen extends StatelessWidget {
       children: [
         Text(
           label.toUpperCase(),
-          style: GoogleFonts.vt323(fontSize: 10, color: lcdInk),
+          style: TextStyle(fontFamily: 'VT323', fontSize: 10, color: lcdInk),
         ),
         Text(
           value.toUpperCase(),
-          style: GoogleFonts.vt323(fontSize: 22, color: lcdInk),
+          style: TextStyle(fontFamily: 'VT323', fontSize: 22, color: lcdInk),
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -424,21 +458,21 @@ class LightMeterScreen extends StatelessWidget {
           children: [
             Text(
               '-3',
-              style: GoogleFonts.vt323(
+              style: TextStyle(fontFamily: 'VT323', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
               ),
             ),
             Text(
               '0',
-              style: GoogleFonts.vt323(
+              style: TextStyle(fontFamily: 'VT323', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
               ),
             ),
             Text(
               '+3',
-              style: GoogleFonts.vt323(
+              style: TextStyle(fontFamily: 'VT323', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
               ),
@@ -523,7 +557,7 @@ class LightMeterScreen extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: GoogleFonts.spaceGrotesk(
+                style: TextStyle(fontFamily: 'SpaceGrotesk', 
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
@@ -538,7 +572,9 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildModeSelector(BuildContext context, ExposureState state) {
-    final isDark = state.themeMode == ThemeMode.dark;
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
     final modes = [
       {'label': 'P', 'full': 'PROGRAM', 'target': CalculationTarget.shutter},
       {'label': 'A', 'full': 'APERTURE', 'target': CalculationTarget.aperture},
@@ -549,12 +585,15 @@ class LightMeterScreen extends StatelessWidget {
       children: modes.map((m) {
         // Since we don't have distinct PASM enums yet, we'll map them loosely to the current targets
         bool isActive = false;
-        if (m['label'] == 'A' && state.target == CalculationTarget.aperture)
+        if (m['label'] == 'A' && state.target == CalculationTarget.aperture) {
           isActive = true;
-        if (m['label'] == 'S' && state.target == CalculationTarget.shutter)
+        }
+        if (m['label'] == 'S' && state.target == CalculationTarget.shutter) {
           isActive = true;
-        if (m['label'] == 'P' && !isActive)
+        }
+        if (m['label'] == 'P' && !isActive) {
           isActive = true; // Temporary P fallback
+        }
 
         return Expanded(
           child: GestureDetector(
@@ -635,7 +674,7 @@ class LightMeterScreen extends StatelessWidget {
                 children: [
                   Text(
                     m['label'] as String,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: isActive ? Colors.black : Colors.white,
@@ -643,7 +682,7 @@ class LightMeterScreen extends StatelessWidget {
                   ),
                   Text(
                     m['full'] as String,
-                    style: GoogleFonts.spaceGrotesk(
+                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
                       fontSize: 7,
                       fontWeight: FontWeight.bold,
                       color: isActive
@@ -661,7 +700,9 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildMechanicalInterface(BuildContext context, ExposureState state) {
-    final isDark = state.themeMode == ThemeMode.dark;
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
     return Column(
       children: [
         _buildModeSelector(context, state),
@@ -781,9 +822,9 @@ class LightMeterScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
-        _buildFilmSimulationButton(context, state),
+        _buildFilmSimulationButton(context, state, isDark),
         const SizedBox(height: 16),
-        _buildNdFilterButton(context, state),
+        _buildNdFilterButton(context, state, isDark),
       ],
     );
   }
@@ -805,9 +846,10 @@ class LightMeterScreen extends StatelessWidget {
         height: 84, // Reduced height for insets
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF161719) : const Color(0xFFF2F2F2),
+          image: skeuomorphicNoise,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isDark ? Colors.black : Colors.black.withValues(alpha: 0.05),
+            color: isDark ? const Color(0xFF000000) : Colors.black.withValues(alpha: 0.05),
             width: 1,
           ),
           // Sharp Inset shadow for a "carved" look
@@ -846,7 +888,7 @@ class LightMeterScreen extends StatelessWidget {
           children: [
             Text(
               label,
-              style: GoogleFonts.spaceGrotesk(
+              style: TextStyle(fontFamily: 'SpaceGrotesk', 
                 fontSize: 8,
                 fontWeight: FontWeight.bold,
                 color: const Color(0xFF767575),
@@ -918,7 +960,7 @@ class LightMeterScreen extends StatelessWidget {
                   children: [
                     Text(
                       value,
-                      style: GoogleFonts.spaceGrotesk(
+                      style: TextStyle(fontFamily: 'SpaceGrotesk', 
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: color,
@@ -927,7 +969,7 @@ class LightMeterScreen extends StatelessWidget {
                     if (caption != null)
                       Text(
                         caption,
-                        style: GoogleFonts.spaceGrotesk(
+                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
                           fontSize: 6,
                           fontWeight: FontWeight.bold,
                           color: color.withValues(alpha: 0.5),
@@ -1003,22 +1045,23 @@ class LightMeterScreen extends StatelessWidget {
 
   // Duplicated _buildFilmSimulationButton removed
 
-  Widget _buildNdFilterButton(BuildContext context, ExposureState state) {
+  Widget _buildNdFilterButton(BuildContext context, ExposureState state, bool isDark) {
     return Container(
       height: 72,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        color: state.themeMode == ThemeMode.dark
-            ? const Color(0xFF191A1A)
-            : const Color(0xFFFFFFFF),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.1)
+            : Colors.black.withValues(alpha: 0.05),
+        image: skeuomorphicNoise,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: state.themeMode == ThemeMode.dark
-              ? Colors.transparent
-              : const Color(0xFFE5E5E5),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.1)
+              : Colors.black.withValues(alpha: 0.05),
           width: 1,
         ),
-        boxShadow: state.themeMode == ThemeMode.dark
+        boxShadow: isDark
             ? [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.5),
@@ -1043,10 +1086,10 @@ class LightMeterScreen extends StatelessWidget {
             children: [
               Text(
                 'ND FILTER',
-                style: GoogleFonts.spaceGrotesk(
+                style: TextStyle(fontFamily: 'SpaceGrotesk', 
                   fontSize: 8,
                   fontWeight: FontWeight.bold,
-                  color: state.themeMode == ThemeMode.dark
+                  color: isDark
                       ? const Color(0xFF767575)
                       : const Color(0xFFA0A0A0),
                 ),
@@ -1054,7 +1097,7 @@ class LightMeterScreen extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 '${state.ndFilter.label} ${state.ndFilter == NdFilter.none ? '' : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS'}',
-                style: GoogleFonts.spaceGrotesk(
+                style: TextStyle(fontFamily: 'SpaceGrotesk', 
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF8EFF71),
@@ -1069,7 +1112,7 @@ class LightMeterScreen extends StatelessWidget {
             },
             child: Icon(
               Icons.tune,
-              color: state.themeMode == ThemeMode.dark
+              color: isDark
                   ? Colors.white.withValues(alpha: 0.2)
                   : Colors.black.withValues(alpha: 0.2),
               size: 24,
@@ -1081,11 +1124,12 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   void _showNdFilterPickerDialog(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: state.themeMode == ThemeMode.dark
-          ? const Color(0xFF131313)
-          : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1097,12 +1141,10 @@ class LightMeterScreen extends StatelessWidget {
             children: [
               Text(
                 'SELECT ND FILTER',
-                style: GoogleFonts.spaceGrotesk(
+                style: TextStyle(fontFamily: 'SpaceGrotesk', 
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: state.themeMode == ThemeMode.dark
-                      ? Colors.white
-                      : Colors.black,
+                  color: isDark ? Colors.white : Colors.black,
                   letterSpacing: 2,
                 ),
               ),
@@ -1112,7 +1154,9 @@ class LightMeterScreen extends StatelessWidget {
                 runSpacing: 12,
                 children: NdFilter.values.map((f) {
                   final isSelected = state.ndFilter == f;
-                  final isDark = state.themeMode == ThemeMode.dark;
+                  final isDark = state.themeMode == ThemeMode.system
+                      ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+                      : state.themeMode == ThemeMode.dark;
                   return GestureDetector(
                     onTap: () {
                       state.setNdFilter(f);
@@ -1133,7 +1177,7 @@ class LightMeterScreen extends StatelessWidget {
                       ),
                       child: Text(
                         f.label,
-                        style: GoogleFonts.spaceGrotesk(
+                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: isSelected
@@ -1153,8 +1197,7 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFilmSimulationButton(BuildContext context, ExposureState state) {
-    final isDark = state.themeMode == ThemeMode.dark;
+  Widget _buildFilmSimulationButton(BuildContext context, ExposureState state, bool isDark) {
     return InkWell(
       onTap: () => Navigator.push(
         context,
@@ -1164,6 +1207,7 @@ class LightMeterScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF252626) : Colors.white,
+          image: skeuomorphicNoise,
           borderRadius: BorderRadius.circular(8),
           boxShadow: isDark
               ? null
@@ -1183,7 +1227,7 @@ class LightMeterScreen extends StatelessWidget {
               children: [
                 Text(
                   'FILM STOCK',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 10,
                     color: isDark
                         ? const Color(0xFFACABAA)
@@ -1195,7 +1239,7 @@ class LightMeterScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   state.selectedFilm?.name.toUpperCase() ?? 'NONE',
-                  style: GoogleFonts.spaceGrotesk(
+                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: state.primaryColor,
@@ -1237,127 +1281,141 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildProBottomNav(BuildContext context, ExposureState state) {
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
     return Positioned(
       bottom: 24,
       left: 24,
       right: 24,
-      child: Container(
-        height: 72,
-        decoration: BoxDecoration(
-          color: const Color(0xFF131313).withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+      child: ClipRect(
+        child: state.enableBlur
+            ? BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
+                child: _buildBottomNavContent(context, state, isDark),
+              )
+            : _buildBottomNavContent(context, state, isDark),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavContent(BuildContext context, ExposureState state, bool isDark) {
+    return Container(
+      height: 72,
+      decoration: BoxDecoration(
+        color: isDark 
+            ? const Color(0xFF131313).withValues(alpha: state.enableBlur ? 0.6 : 1.0) 
+            : Colors.white.withValues(alpha: state.enableBlur ? 0.75 : 1.0),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark 
+              ? Colors.white.withValues(alpha: 0.1) 
+              : Colors.black.withValues(alpha: 0.05),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(
-                    left: 8,
-                    top: 8,
-                    bottom: 8,
-                    right: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: state.primaryColor,
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: [
-                      BoxShadow(
-                        color: state.primaryColor.withValues(alpha: 0.3),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.speed, color: Colors.black, size: 28),
-                      const SizedBox(height: 2),
-                      Text(
-                        'MEASURE',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (context, animation, secondaryAnimation) =>
-                          const SettingsScreen(),
-                      transitionsBuilder:
-                          (context, animation, secondaryAnimation, child) {
-                        const begin = Offset(0, 1);
-                        const end = Offset.zero;
-                        const curve = Curves.easeOutQuint;
-                        var tween = Tween(begin: begin, end: end)
-                            .chain(CurveTween(curve: curve));
-                        return SlideTransition(
-                          position: animation.drive(tween),
-                          child: child,
-                        );
-                      },
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+              },
+              child: Container(
+                margin: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: state.primaryColor,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: state.primaryColor.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(
-                    left: 4,
-                    top: 8,
-                    bottom: 8,
-                    right: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.settings,
-                        color: Color(0xFF757575),
-                        size: 28,
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.speed, color: Colors.black, size: 24),
+                    const SizedBox(height: 2),
+                    Text(
+                      'MEASURE',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                        letterSpacing: 1.2,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'SETTINGS',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF757575),
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        const SettingsScreen(),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      const begin = Offset(0, 1);
+                      const end = Offset.zero;
+                      const curve = Curves.easeOutQuint;
+                      var tween = Tween(begin: begin, end: end)
+                          .chain(CurveTween(curve: curve));
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: isDark ? null : Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.settings,
+                      color: isDark ? const Color(0xFF757575) : Colors.black45,
+                      size: 24,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'SETTINGS',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? const Color(0xFF757575) : Colors.black45,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1385,7 +1443,9 @@ class _BackgroundPatternPainter extends CustomPainter {
 }
 
 void _showExpCompDialog(BuildContext context, ExposureState state) {
-  final isDark = state.themeMode == ThemeMode.dark;
+  final isDark = state.themeMode == ThemeMode.system
+      ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+      : state.themeMode == ThemeMode.dark;
   showModalBottomSheet(
     context: context,
     backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
@@ -1400,7 +1460,7 @@ void _showExpCompDialog(BuildContext context, ExposureState state) {
           children: [
             Text(
               'EXPOSURE COMPENSATION',
-              style: GoogleFonts.spaceGrotesk(
+              style: TextStyle(fontFamily: 'SpaceGrotesk', 
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: isDark ? Colors.white : Colors.black,
@@ -1429,7 +1489,7 @@ void _showExpCompDialog(BuildContext context, ExposureState state) {
                   ),
                   child: Text(
                     '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)} EV',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: state.primaryColor,
@@ -1464,21 +1524,23 @@ void _showExpCompDialog(BuildContext context, ExposureState state) {
 }
 
 void _showSensorSupportAlert(BuildContext context, ExposureState state) {
-  final isDark = state.themeMode == ThemeMode.dark;
+  final isDark = state.themeMode == ThemeMode.system
+      ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+      : state.themeMode == ThemeMode.dark;
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
       backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
       title: Text(
         'No Sensor Detected',
-        style: GoogleFonts.spaceGrotesk(
+        style: TextStyle(fontFamily: 'SpaceGrotesk', 
           color: isDark ? Colors.white : Colors.black,
           fontWeight: FontWeight.bold,
         ),
       ),
       content: Text(
         'This app requires an ambient light sensor. Your device does not report one. Calculations will be simulated.',
-        style: GoogleFonts.spaceGrotesk(
+        style: TextStyle(fontFamily: 'SpaceGrotesk', 
           color: isDark ? const Color(0xFFACABAA) : const Color(0xFF757575),
         ),
       ),

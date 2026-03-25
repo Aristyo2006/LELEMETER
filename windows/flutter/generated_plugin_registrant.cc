@@ -8,10 +8,13 @@
 
 #include <ambient_light/ambient_light_plugin_c_api.h>
 #include <battery_plus/battery_plus_windows_plugin.h>
+#include <dynamic_color/dynamic_color_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   AmbientLightPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("AmbientLightPluginCApi"));
   BatteryPlusWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("BatteryPlusWindowsPlugin"));
+  DynamicColorPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("DynamicColorPluginCApi"));
 }

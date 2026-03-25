@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'exposure_state.dart';
 import 'light_meter_screen.dart';
@@ -30,16 +28,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final startTime = DateTime.now();
     _controller.forward();
 
-    // 2. Pre-load critical fonts to prevent UI lag/pops
-    try {
-      // Triggering the fetch
-      GoogleFonts.spaceGrotesk();
-      GoogleFonts.inter();
-      // Wait for all currently requested fonts to load
-      await GoogleFonts.pendingFonts();
-    } catch (e) {
-      debugPrint('Font pre-loading failed: $e');
-    }
+    // 2. Pre-load check (already bundled, but we can wait for engine readiness if needed)
+    // No longer needs GoogleFonts.pendingFonts() as they are in pubspec.yaml
+    await Future.delayed(const Duration(milliseconds: 500));
 
     // 3. Wait for ExposureState to be fully ready (SharedPreferences, etc.)
     final state = Provider.of<ExposureState>(context, listen: false);
@@ -98,7 +89,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         const SizedBox(height: 12),
                         Text(
                           'LELEMETER',
-                          style: GoogleFonts.spaceGrotesk(
+                          style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -113,7 +105,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   // SYSTEM STATUS Header
                   Text(
                     'SYSTEM STATUS',
-                    style: GoogleFonts.spaceGrotesk(
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 2,
@@ -147,7 +140,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           const SizedBox(width: 16),
                           Text(
                             'CALIBRATING SENSORS',
-                            style: GoogleFonts.spaceGrotesk(
+                            style: TextStyle(
+                              fontFamily: 'SpaceGrotesk',
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
@@ -161,7 +155,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         builder: (context, child) {
                           return Text(
                             '${(_controller.value * 100).toStringAsFixed(1)}%',
-                            style: GoogleFonts.spaceGrotesk(
+                            style: TextStyle(
+                              fontFamily: 'SpaceGrotesk',
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFFF09819),
@@ -214,7 +209,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   children: [
                     Text(
                       'BUILD v2.0.0',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 4,
@@ -224,7 +220,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     const SizedBox(height: 4),
                     Text(
                       'MILESTONE 1 // HARDWARE CORE',
-                      style: GoogleFonts.spaceGrotesk(
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 8,
                         letterSpacing: 2,
                         color: Colors.white,

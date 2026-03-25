@@ -39,6 +39,12 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
 
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
+  
+  // Moving average for sensor smoothing
+  final List<double> _luxBuffer = [];
+  static const int _bufferSize = 5;
+  DateTime _lastUiUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+  static const int _minUpdateIntervalMs = 50; // Max 20Hz UI updates
 
   FilmStock? _selectedFilm;
   FilmStock? get selectedFilm => _selectedFilm;
@@ -99,7 +105,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   String _errorMessage = '';
   String get errorMessage => _errorMessage;
 
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
   bool _hapticsEnabled = true;
@@ -111,17 +117,34 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   bool _isPureBlack = true;
   bool get isPureBlack => _isPureBlack;
 
+  bool _useDynamicColor = false;
+  bool get useDynamicColor => _useDynamicColor;
+  Color? _dynamicAccent;
+
   Color _primaryColor = const Color(0xFFFFB300); // Default Amber
-  Color get primaryColor => _primaryColor;
+  Color get primaryColor => (_useDynamicColor && _dynamicAccent != null) ? _dynamicAccent! : _primaryColor;
 
   bool _hideStatusBar = false;
   bool get hideStatusBar => _hideStatusBar;
 
+  bool _enableBlur = true;
+  bool get enableBlur => _enableBlur;
+
+  void setThemeMode(ThemeMode mode) {
+    if (_themeMode != mode) {
+      _themeMode = mode;
+      _prefs.setString('themeModePreference', mode.name);
+      _triggerHaptic(light: true);
+      notifyListeners();
+    }
+  }
+
   void toggleTheme() {
-    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    _prefs.setBool('isDarkMode', _themeMode == ThemeMode.dark);
-    _triggerHaptic(light: true);
-    notifyListeners();
+    if (_themeMode == ThemeMode.dark) {
+      setThemeMode(ThemeMode.light);
+    } else {
+      setThemeMode(ThemeMode.dark);
+    }
   }
 
   void toggleHaptics() {
@@ -144,6 +167,27 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     _applyStatusBar();
     _triggerHaptic();
     notifyListeners();
+  }
+
+  void toggleUseDynamicColor() {
+    _useDynamicColor = !_useDynamicColor;
+    _prefs.setBool('useDynamicColor', _useDynamicColor);
+    _triggerHaptic();
+    notifyListeners();
+  }
+
+  void toggleBlur() {
+    _enableBlur = !_enableBlur;
+    _prefs.setBool('enableBlur', _enableBlur);
+    _triggerHaptic();
+    notifyListeners();
+  }
+
+  void setDynamicAccent(Color? color) {
+    if (_dynamicAccent != color) {
+      _dynamicAccent = color;
+      if (_useDynamicColor) notifyListeners();
+    }
   }
 
   void _applyStatusBar() {
@@ -246,7 +290,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('App resumed, reinitializing sensor...');
       _initSensor();
       _initBattery();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.paused) {
       debugPrint('App backgrounded, stopping sensor...');
       _subscription?.cancel();
       _isListening = false;
@@ -258,11 +302,18 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     _prefs = await SharedPreferences.getInstance();
     
     // Load saved settings
-    _themeMode = (_prefs.getBool('isDarkMode') ?? true) ? ThemeMode.dark : ThemeMode.light;
+    String themeStr = _prefs.getString('themeModePreference') ?? 'system';
+    // Migration: if they have the old bool 'isDarkMode' but not the new string
+    if (_prefs.containsKey('isDarkMode') && !_prefs.containsKey('themeModePreference')) {
+      themeStr = _prefs.getBool('isDarkMode')! ? 'dark' : 'light';
+    }
+    _themeMode = ThemeMode.values.firstWhere((e) => e.name == themeStr, orElse: () => ThemeMode.system);
     _hapticsEnabled = _prefs.getBool('hapticsEnabled') ?? true;
     _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
     _isPureBlack = _prefs.getBool('isPureBlack') ?? true;
     _hideStatusBar = _prefs.getBool('hideStatusBar') ?? false;
+    _useDynamicColor = _prefs.getBool('useDynamicColor') ?? false;
+    _enableBlur = _prefs.getBool('enableBlur') ?? true;
     _applyStatusBar();
     
     _iso = _prefs.getInt('iso') ?? isoValues[2];
@@ -344,32 +395,79 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   void _initSensor() {
     try {
       _subscription?.cancel();
-      _subscription = AmbientLight().ambientLightStream.listen((double luxValue) {
+      _subscription =
+          AmbientLight().ambientLightStream.listen((double luxValue) {
+        // 1. Hardware Presence detected
+        if (!_hasSensor) {
+          _hasSensor = true;
+          _errorMessage = '';
+          _fetchSensorName();
+        }
+
+        // 2. Smoothing (Moving Average)
+        _luxBuffer.add(luxValue);
+        if (_luxBuffer.length > _bufferSize) {
+          _luxBuffer.removeAt(0);
+        }
+        
+        final averagedLux = _luxBuffer.reduce((a, b) => a + b) / _luxBuffer.length;
+
+        // 3. Update internal state
         if (!_isLocked) {
-          _currentLux = luxValue;
+          _currentLux = averagedLux;
           _lastUpdate = DateTime.now();
-          _recalculate();
-          notifyListeners();
+          
+          // 4. Throttling: Only trigger recalc and notify UI at a reasonable frequency
+          final now = DateTime.now();
+          if (now.difference(_lastUiUpdate).inMilliseconds >= _minUpdateIntervalMs) {
+            _lastUiUpdate = now;
+            _recalculate();
+            notifyListeners();
+          }
         }
       }, onError: (Object error) {
         _errorMessage = 'Sensor error: $error';
         notifyListeners();
       });
       _isListening = true;
-      
+
       // Check if sensor is actually available
-      AmbientLight().currentAmbientLight().then((lux) {
-        if (lux == null) {
-          _hasSensor = false;
-          _errorMessage = 'No light sensor detected on this device.';
-          _sensorName = "SIMULATED / NOT DETECTED";
-          notifyListeners();
-        } else {
-          _fetchSensorName();
-        }
-      });
+      _checkSensorAvailability();
     } catch (e) {
       _errorMessage = 'Could not initialize light sensor: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> _checkSensorAvailability() async {
+    // Some devices (like real hardware) need a moment or a few retries
+    // for the sensor to wake up and report its presence accurately via the async call.
+    for (int i = 0; i < 3; i++) {
+      try {
+        final lux = await AmbientLight().currentAmbientLight();
+        if (lux != null) {
+          _hasSensor = true;
+          _errorMessage = '';
+          _fetchSensorName();
+          notifyListeners();
+          return; // Success
+        }
+      } catch (e) {
+        debugPrint('Sensor availability check attempt $i failed: $e');
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
+    }
+
+    // Final check: if stream hasn't reported anything yet, 
+    // we don't assume there's no sensor (might just be dark).
+    // But we let the UI know we are still waiting for first data.
+    if (_currentLux == 0.0 && _hasSensor) {
+      _errorMessage = 'Waiting for light sensor... (Try pointing at a light source)';
+      _sensorName = "INITIALIZING...";
+      notifyListeners();
+    } else if (!_hasSensor) {
+      _errorMessage = 'Hardware sensor not detected.';
+      _sensorName = "SIMULATED / NOT DETECTED";
       notifyListeners();
     }
   }
