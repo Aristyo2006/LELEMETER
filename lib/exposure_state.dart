@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ambient_light/ambient_light.dart';
+import 'package:light/light.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exposure_calculator.dart';
 import 'film_database.dart';
 
 class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
-  StreamSubscription<double>? _subscription;
+  StreamSubscription<int>? _subscription;
+  Light? _light;
   StreamSubscription<BatteryState>? _batteryStateSubscription;
   Timer? _batteryTimer;
   bool _hasSensor = true;
@@ -40,11 +41,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
   
-  // Moving average for sensor smoothing
-  final List<double> _luxBuffer = [];
-  static const int _bufferSize = 5;
-  DateTime _lastUiUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-  static const int _minUpdateIntervalMs = 50; // Max 20Hz UI updates
+
 
   FilmStock? _selectedFilm;
   FilmStock? get selectedFilm => _selectedFilm;
@@ -247,7 +244,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
 
   void setPrimaryColor(Color color) {
     _primaryColor = color;
-    _prefs.setInt('primaryColor', color.value);
+    _prefs.setInt('primaryColor', color.toARGB32());
     _triggerHaptic();
     notifyListeners();
   }
@@ -326,7 +323,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     String ndStr = _prefs.getString('ndFilter') ?? 'none';
     _ndFilter = NdFilter.values.firstWhere((e) => e.name == ndStr, orElse: () => NdFilter.none);
 
-    int colorValue = _prefs.getInt('primaryColor') ?? const Color(0xFFFFB300).value;
+    int colorValue = _prefs.getInt('primaryColor') ?? const Color(0xFFFFB300).toARGB32();
     _primaryColor = Color(colorValue);
 
     _calibrationFactor = _prefs.getDouble('calibrationFactor') ?? 1.0;
@@ -395,82 +392,43 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   void _initSensor() {
     try {
       _subscription?.cancel();
-      _subscription =
-          AmbientLight().ambientLightStream.listen((double luxValue) {
-        // 1. Hardware Presence detected
-        if (!_hasSensor) {
+      _light ??= Light();
+      
+      _subscription = _light!.lightSensorStream.listen((int luxValue) {
+        if (!_hasSensor || _sensorName == null) {
           _hasSensor = true;
           _errorMessage = '';
           _fetchSensorName();
         }
 
-        // 2. Smoothing (Moving Average)
-        _luxBuffer.add(luxValue);
-        if (_luxBuffer.length > _bufferSize) {
-          _luxBuffer.removeAt(0);
-        }
-        
-        final averagedLux = _luxBuffer.reduce((a, b) => a + b) / _luxBuffer.length;
-
-        // 3. Update internal state
         if (!_isLocked) {
-          _currentLux = averagedLux;
-          _lastUpdate = DateTime.now();
+          double newLux = luxValue.toDouble();
           
-          // 4. Throttling: Only trigger recalc and notify UI at a reasonable frequency
+          // Throttling: Only update if value changed significantly OR 100ms passed
           final now = DateTime.now();
-          if (now.difference(_lastUiUpdate).inMilliseconds >= _minUpdateIntervalMs) {
-            _lastUiUpdate = now;
+          final spent = _lastUpdate == null ? 1000 : now.difference(_lastUpdate!).inMilliseconds;
+          
+          if (spent >= 100 || (newLux - _currentLux).abs() > (_currentLux * 0.05).clamp(1.0, 50.0)) {
+            _currentLux = newLux;
+            _lastUpdate = now;
             _recalculate();
             notifyListeners();
           }
         }
       }, onError: (Object error) {
-        _errorMessage = 'Sensor error: $error';
+        _hasSensor = false;
+        _errorMessage = 'Sensor error or missing: $error';
         notifyListeners();
       });
       _isListening = true;
-
-      // Check if sensor is actually available
-      _checkSensorAvailability();
     } catch (e) {
+      _hasSensor = false;
       _errorMessage = 'Could not initialize light sensor: $e';
       notifyListeners();
     }
   }
 
-  Future<void> _checkSensorAvailability() async {
-    // Some devices (like real hardware) need a moment or a few retries
-    // for the sensor to wake up and report its presence accurately via the async call.
-    for (int i = 0; i < 3; i++) {
-      try {
-        final lux = await AmbientLight().currentAmbientLight();
-        if (lux != null) {
-          _hasSensor = true;
-          _errorMessage = '';
-          _fetchSensorName();
-          notifyListeners();
-          return; // Success
-        }
-      } catch (e) {
-        debugPrint('Sensor availability check attempt $i failed: $e');
-      }
-      await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
-    }
 
-    // Final check: if stream hasn't reported anything yet, 
-    // we don't assume there's no sensor (might just be dark).
-    // But we let the UI know we are still waiting for first data.
-    if (_currentLux == 0.0 && _hasSensor) {
-      _errorMessage = 'Waiting for light sensor... (Try pointing at a light source)';
-      _sensorName = "INITIALIZING...";
-      notifyListeners();
-    } else if (!_hasSensor) {
-      _errorMessage = 'Hardware sensor not detected.';
-      _sensorName = "SIMULATED / NOT DETECTED";
-      notifyListeners();
-    }
-  }
 
   Future<void> _fetchSensorName() async {
     const platform = MethodChannel('com.arWRKS.lelemeter/sensor');

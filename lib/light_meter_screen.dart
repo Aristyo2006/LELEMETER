@@ -15,61 +15,71 @@ class LightMeterScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ExposureState>(
-      builder: (context, state, child) {
-        final isDark = state.themeMode == ThemeMode.system
-            ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
-            : state.themeMode == ThemeMode.dark;
-        return Scaffold(
-          backgroundColor: isDark
-              ? (state.isPureBlack ? Colors.black : const Color(0xFF1A1B1E))
-              : const Color(0xFFF5F5F5),
-          body: Builder(
-            builder: (context) {
-              // Show sensor support alert if needed
+    // Top level watch ONLY for theme/global appearance to avoid full rebuilds on sensor data
+    final appearance = context.select<ExposureState, (ThemeMode, bool, Color, bool)>(
+      (s) => (s.themeMode, s.isPureBlack, s.primaryColor, s.enableBlur)
+    );
+    
+    final isDark = appearance.$1 == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : appearance.$1 == ThemeMode.dark;
+    final isPureBlack = appearance.$2;
+
+    return Scaffold(
+      backgroundColor: isDark
+          ? (isPureBlack ? Colors.black : const Color(0xFF1A1B1E))
+          : const Color(0xFFF5F5F5),
+      body: Stack(
+        children: [
+          // Background pattern - STATIC REPAINT BOUNDARY
+          const Positioned.fill(
+            child: RepaintBoundary(
+              child: _StaticBackground(),
+            ),
+          ),
+          
+          // Main Scrollable Content
+          Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 100, // Space for fixed header
+                    bottom: 120, // Space for bottom nav
+                  ),
+                  child: Column(
+                    children: [
+                      Consumer<ExposureState>(builder: (context, s, _) => _buildGlassReadout(context, s)),
+                      const SizedBox(height: 16),
+                      Consumer<ExposureState>(builder: (context, s, _) => _buildQuickControls(context, s)),
+                      const SizedBox(height: 24),
+                      Consumer<ExposureState>(builder: (context, s, _) => _buildMechanicalInterface(context, s)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          // Fixed Overlays - Wrap expensive blurs in RepaintBoundary if possible
+          Consumer<ExposureState>(builder: (context, s, _) => _buildProHeader(context, s)),
+          Consumer<ExposureState>(builder: (context, s, _) => _buildProBottomNav(context, s)),
+          
+          // Sensor Alert if needed
+          Consumer<ExposureState>(
+            builder: (context, state, _) {
               if (!state.hasSensor && !state.hasShownSensorAlert) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showSensorSupportAlert(context, state);
                 });
               }
-
-              return Stack(
-                children: [
-                  // Background pattern
-                  Positioned.fill(
-                    child: CustomPaint(painter: _BackgroundPatternPainter()),
-                  ),
-                  Column(
-                    children: [
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.only(
-                            left: 16,
-                            right: 16,
-                            top: 100, // Space for fixed header
-                            bottom: 120, // Space for bottom nav
-                          ),
-                          child: Column(
-                            children: [
-                              _buildGlassReadout(context, state),
-                              const SizedBox(height: 16),
-                              _buildQuickControls(context, state),
-                              const SizedBox(height: 24),
-                              _buildMechanicalInterface(context, state),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  _buildProHeader(context, state),
-                  _buildProBottomNav(context, state),
-                ],
-              );
+              return const SizedBox.shrink();
             },
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -149,10 +159,7 @@ class LightMeterScreen extends StatelessWidget {
     IconData icon;
     Color color;
 
-    if (isCharging) {
-      icon = Icons.battery_charging_full;
-      color = const Color(0xFF8EFF71);
-    } else if (level < 20) {
+    if (level < 20) {
       icon = Icons.battery_alert;
       color = const Color(0xFFEE7D77);
     } else if (level < 40) {
@@ -166,7 +173,7 @@ class LightMeterScreen extends StatelessWidget {
       color = lcdInk;
     } else {
       icon = Icons.battery_full;
-      color = lcdInk;
+      color = isCharging ? const Color(0xFF8EFF71) : lcdInk;
     }
 
     return Icon(icon, size: 14, color: color);
@@ -180,15 +187,12 @@ class LightMeterScreen extends StatelessWidget {
     final String label;
     final Color color;
 
-    if (isCharging) {
-      label = '⚡CHRG';
-      color = const Color(0xFF8EFF71); // green
-    } else if (isLow) {
+    if (isLow && !isCharging) {
       label = '!LOW';
       color = const Color(0xFFEE7D77); // red
     } else {
       label = state.batteryLevel <= 0 ? '--%' : '${state.batteryLevel}%';
-      color = lcdInk;
+      color = isCharging ? const Color(0xFF8EFF71) : lcdInk;
     }
 
     return Text(
@@ -706,7 +710,32 @@ class LightMeterScreen extends StatelessWidget {
     return Column(
       children: [
         _buildModeSelector(context, state),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        // 1. Exposure Compensation (Now at top under PSA)
+        Row(
+          children: [
+            Expanded(
+              child: _build3DControlBlock(
+                label: 'EXP. COMP',
+                value:
+                    '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)}',
+                color: state.exposureCompensation != 0
+                    ? const Color(0xFF8EFF71)
+                    : (isDark ? Colors.white : Colors.black),
+                isDark: isDark,
+                onDecrement: () => state.setExposureCompensation(
+                  state.exposureCompensation - 0.3,
+                ),
+                onIncrement: () => state.setExposureCompensation(
+                  state.exposureCompensation + 0.3,
+                ),
+                onTap: () => _showExposureCompensationDialog(context, state),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // 2. Shutter and ND Filter (Beside each other)
         Row(
           children: [
             Expanded(
@@ -731,12 +760,17 @@ class LightMeterScreen extends StatelessWidget {
                     state.shutterValues.indexOf(state.shutterSpeed) + 1,
                   )],
                 ),
-                onTap: () => state.setTarget(CalculationTarget.shutter),
+                onTap: () => _showShutterSpeedPickerDialog(context, state),
               ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _build3DNdFilterBlock(context, state, isDark),
             ),
           ],
         ),
         const SizedBox(height: 16),
+        // 3. Aperture and ISO
         Row(
           children: [
             Expanded(
@@ -759,7 +793,7 @@ class LightMeterScreen extends StatelessWidget {
                     state.apertureValues.indexOf(state.aperture) + 1,
                   )],
                 ),
-                onTap: () => state.setTarget(CalculationTarget.aperture),
+                onTap: () => _showAperturePickerDialog(context, state),
               ),
             ),
             const SizedBox(width: 8),
@@ -791,40 +825,15 @@ class LightMeterScreen extends StatelessWidget {
                       ),
                 onTap: state.selectedFilm != null
                     ? () {}
-                    : () => state.setTarget(CalculationTarget.iso),
+                    : () => _showIsoPickerDialog(context, state),
                 isLocked: state.selectedFilm != null,
                 caption: state.selectedFilm != null ? 'FILM' : null,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _build3DControlBlock(
-                label: 'EXP. COMP',
-                value:
-                    '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)}',
-                color: state.exposureCompensation != 0
-                    ? const Color(0xFF8EFF71)
-                    : (isDark ? Colors.white : Colors.black),
-                isDark: isDark,
-                onDecrement: () => state.setExposureCompensation(
-                  state.exposureCompensation - 0.3,
-                ),
-                onIncrement: () => state.setExposureCompensation(
-                  state.exposureCompensation + 0.3,
-                ),
-                onTap: () => _showExposureCompensationDialog(context, state),
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 24),
         _buildFilmSimulationButton(context, state, isDark),
-        const SizedBox(height: 16),
-        _buildNdFilterButton(context, state, isDark),
       ],
     );
   }
@@ -840,286 +849,193 @@ class LightMeterScreen extends StatelessWidget {
     bool isLocked = false,
     String? caption,
   }) {
-    return GestureDetector(
+    return _Interactive3DBlock(
+      label: label,
+      value: value,
+      color: color,
+      isDark: isDark,
+      onDecrement: onDecrement,
+      onIncrement: onIncrement,
       onTap: onTap,
-      child: Container(
-        height: 84, // Reduced height for insets
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161719) : const Color(0xFFF2F2F2),
-          image: skeuomorphicNoise,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isDark ? const Color(0xFF000000) : Colors.black.withValues(alpha: 0.05),
-            width: 1,
-          ),
-          // Sharp Inset shadow for a "carved" look
-          boxShadow: isDark
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.95),
-                    offset: const Offset(2, 2),
-                    blurRadius: 4,
-                    blurStyle: BlurStyle.inner,
-                  ),
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    offset: const Offset(-1, -1),
-                    blurRadius: 2,
-                    blurStyle: BlurStyle.inner,
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    offset: const Offset(1, 1),
-                    blurRadius: 2,
-                    blurStyle: BlurStyle.inner,
-                  ),
-                  const BoxShadow(
-                    color: Colors.white,
-                    offset: Offset(-1, -1),
-                    blurRadius: 2,
-                    blurStyle: BlurStyle.inner,
-                  ),
-                ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                fontSize: 8,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF767575),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                GestureDetector(
-                  onTap: onDecrement,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: isDark
-                            ? [const Color(0xFF383838), const Color(0xFF111111)]
-                            : [
-                                const Color(0xFFFFFFFF),
-                                const Color(0xFFE0E0E0),
-                              ],
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.black.withValues(alpha: 0.5)
-                            : const Color(0xFFCCCCCC),
-                        width: 1,
-                      ),
-                      boxShadow: isDark
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.8),
-                                offset: const Offset(1.5, 2.5),
-                                blurRadius: 4,
-                              ),
-                              BoxShadow(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                offset: const Offset(-0.5, -0.5),
-                                blurRadius: 1,
-                                blurStyle: BlurStyle.inner,
-                              ),
-                            ]
-                          : [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.15),
-                                offset: const Offset(1, 2),
-                                blurRadius: 3,
-                              ),
-                              const BoxShadow(
-                                color: Colors.white,
-                                offset: Offset(-1, -1),
-                                blurRadius: 1,
-                                blurStyle: BlurStyle.inner,
-                              ),
-                            ],
-                    ),
-                    child: const Icon(
-                      Icons.remove,
-                      size: 16,
-                      color: Color(0xFF767575),
-                    ),
-                  ),
-                ),
-                Column(
-                  children: [
-                    Text(
-                      value,
-                      style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: color,
-                      ),
-                    ),
-                    if (caption != null)
-                      Text(
-                        caption,
-                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                          fontSize: 6,
-                          fontWeight: FontWeight.bold,
-                          color: color.withValues(alpha: 0.5),
-                        ),
-                      ),
-                  ],
-                ),
-                GestureDetector(
-                  onTap: onIncrement,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: isDark
-                            ? [const Color(0xFF383838), const Color(0xFF111111)]
-                            : [
-                                const Color(0xFFFFFFFF),
-                                const Color(0xFFE0E0E0),
-                              ],
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.black.withValues(alpha: 0.5)
-                            : const Color(0xFFCCCCCC),
-                        width: 1,
-                      ),
-                      boxShadow: isDark
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.8),
-                                offset: const Offset(1.5, 2.5),
-                                blurRadius: 4,
-                              ),
-                              BoxShadow(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                offset: const Offset(-0.5, -0.5),
-                                blurRadius: 1,
-                                blurStyle: BlurStyle.inner,
-                              ),
-                            ]
-                          : [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.15),
-                                offset: const Offset(1, 2),
-                                blurRadius: 3,
-                              ),
-                              const BoxShadow(
-                                color: Colors.white,
-                                offset: Offset(-1, -1),
-                                blurRadius: 1,
-                                blurStyle: BlurStyle.inner,
-                              ),
-                            ],
-                    ),
-                    child: const Icon(
-                      Icons.add,
-                      size: 16,
-                      color: Color(0xFF767575),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      isLocked: isLocked,
+      caption: caption,
+    );
+  }
+
+  Widget _build3DNdFilterBlock(BuildContext context, ExposureState state, bool isDark) {
+    return _build3DControlBlock(
+      label: 'ND FILTER',
+      value: state.ndFilter.label,
+      color: state.ndFilter != NdFilter.none
+          ? const Color(0xFF8EFF71)
+          : (isDark ? Colors.white : Colors.black),
+      isDark: isDark,
+      caption: state.ndFilter == NdFilter.none ? null : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS',
+      onDecrement: () {
+        final values = NdFilter.values;
+        final index = values.indexOf(state.ndFilter);
+        if (index > 0) state.setNdFilter(values[index - 1]);
+      },
+      onIncrement: () {
+        final values = NdFilter.values;
+        final index = values.indexOf(state.ndFilter);
+        if (index < values.length - 1) state.setNdFilter(values[index + 1]);
+      },
+      onTap: () => _showNdFilterPickerDialog(context, state),
+    );
+  }
+
+  void _showShutterSpeedPickerDialog(BuildContext context, ExposureState state) {
+    _showValuePickerDialog(
+      context: context,
+      state: state,
+      title: 'SHUTTER SPEED',
+      value: ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
+      onDecrement: () => state.setShutterSpeed(
+        state.shutterValues[math.max(
+          0,
+          state.shutterValues.indexOf(state.shutterSpeed) - 1,
+        )],
+      ),
+      onIncrement: () => state.setShutterSpeed(
+        state.shutterValues[math.min(
+          state.shutterValues.length - 1,
+          state.shutterValues.indexOf(state.shutterSpeed) + 1,
+        )],
       ),
     );
   }
 
-  // Duplicated _buildFilmSimulationButton removed
+  void _showAperturePickerDialog(BuildContext context, ExposureState state) {
+    _showValuePickerDialog(
+      context: context,
+      state: state,
+      title: 'APERTURE',
+      value: ExposureCalculator.formatAperture(state.aperture),
+      onDecrement: () => state.setAperture(
+        state.apertureValues[math.max(
+          0,
+          state.apertureValues.indexOf(state.aperture) - 1,
+        )],
+      ),
+      onIncrement: () => state.setAperture(
+        state.apertureValues[math.min(
+          state.apertureValues.length - 1,
+          state.apertureValues.indexOf(state.aperture) + 1,
+        )],
+      ),
+    );
+  }
 
-  Widget _buildNdFilterButton(BuildContext context, ExposureState state, bool isDark) {
-    return Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.1)
-            : Colors.black.withValues(alpha: 0.05),
-        image: skeuomorphicNoise,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.black.withValues(alpha: 0.05),
-          width: 1,
-        ),
-        boxShadow: isDark
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  offset: const Offset(4, 4),
-                  blurRadius: 10,
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  offset: const Offset(2, 4),
-                  blurRadius: 8,
-                ),
-              ],
+  void _showIsoPickerDialog(BuildContext context, ExposureState state) {
+    _showValuePickerDialog(
+      context: context,
+      state: state,
+      title: 'ISO SPEED',
+      value: state.iso.toString(),
+      onDecrement: () => state.setIso(
+        state.isoValues[math.max(
+          0,
+          state.isoValues.indexOf(state.iso) - 1,
+        )],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'ND FILTER',
-                style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                  color: isDark
-                      ? const Color(0xFF767575)
-                      : const Color(0xFFA0A0A0),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${state.ndFilter.label} ${state.ndFilter == NdFilter.none ? '' : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS'}',
-                style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF8EFF71),
-                ),
-              ),
-            ],
-          ),
-          GestureDetector(
-            onTap: () {
-              // Show ND filter picker dialog
-              _showNdFilterPickerDialog(context, state);
-            },
-            child: Icon(
-              Icons.tune,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.2),
-              size: 24,
-            ),
-          ),
-        ],
+      onIncrement: () => state.setIso(
+        state.isoValues[math.min(
+          state.isoValues.length - 1,
+          state.isoValues.indexOf(state.iso) + 1,
+        )],
       ),
+    );
+  }
+
+  void _showValuePickerDialog({
+    required BuildContext context,
+    required ExposureState state,
+    required String title,
+    required String value,
+    required VoidCallback onDecrement,
+    required VoidCallback onIncrement,
+  }) {
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Consumer<ExposureState>(
+          builder: (context, s, _) {
+            // Re-fetch formatted value from state in case it updated via buttons
+            String currentValue = value;
+            if (title == 'SHUTTER SPEED') currentValue = ExposureCalculator.formatShutterSpeed(s.shutterSpeed);
+            if (title == 'APERTURE') currentValue = ExposureCalculator.formatAperture(s.aperture);
+            if (title == 'ISO SPEED') currentValue = s.iso.toString();
+
+            return Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: s.primaryColor,
+                        onPressed: () {
+                          onDecrement();
+                          HapticFeedback.selectionClick();
+                        },
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: s.primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          currentValue,
+                          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: s.primaryColor,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: s.primaryColor,
+                        onPressed: () {
+                          onIncrement();
+                          HapticFeedback.selectionClick();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            );
+          }
+        );
+      },
     );
   }
 
@@ -1199,10 +1115,31 @@ class LightMeterScreen extends StatelessWidget {
 
   Widget _buildFilmSimulationButton(BuildContext context, ExposureState state, bool isDark) {
     return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const FilmDatabaseScreen()),
-      ),
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true, // Respect status bar!
+          backgroundColor: Colors.transparent,
+          barrierColor: Colors.black.withValues(alpha: 0.72),
+          builder: (context) => DraggableScrollableSheet(
+            initialChildSize: 0.42,
+            minChildSize: 0.25,
+            maxChildSize: 1.0,
+            snap: true,
+            snapSizes: const [0.42, 1.0],
+            expand: false,
+            builder: (context, scrollController) => ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              child: Container(
+                color: isDark ? const Color(0xFF131313) : Colors.white,
+                child: FilmDatabaseScreen(scrollController: scrollController),
+              ),
+            ),
+          ),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1423,6 +1360,18 @@ class LightMeterScreen extends StatelessWidget {
 
 // --- Helper Components & Dialogs ---
 
+class _StaticBackground extends StatelessWidget {
+  const _StaticBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _BackgroundPatternPainter(),
+      willChange: false,
+    );
+  }
+}
+
 class _BackgroundPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -1623,4 +1572,225 @@ class ColorNoisePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(ColorNoisePainter oldDelegate) => false;
+}
+
+// ─── Interactive Helper Widgets ─────────────────────────────────────────────
+
+class _Interactive3DBlock extends StatefulWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final bool isDark;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  final VoidCallback onTap;
+  final bool isLocked;
+  final String? caption;
+
+  const _Interactive3DBlock({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.isDark,
+    required this.onDecrement,
+    required this.onIncrement,
+    required this.onTap,
+    this.isLocked = false,
+    this.caption,
+  });
+
+  @override
+  State<_Interactive3DBlock> createState() => _Interactive3DBlockState();
+}
+
+class _Interactive3DBlockState extends State<_Interactive3DBlock> {
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapUp: (_) => setState(() => _scale = 1.0),
+      onTapCancel: () => setState(() => _scale = 1.0),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          height: 84,
+          decoration: BoxDecoration(
+            color: widget.isDark ? const Color(0xFF161719) : const Color(0xFFF2F2F2),
+            image: skeuomorphicNoise,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: widget.isDark ? const Color(0xFF000000) : Colors.black.withValues(alpha: 0.05),
+              width: 1,
+            ),
+            boxShadow: widget.isDark
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.95),
+                      offset: const Offset(2, 2),
+                      blurRadius: 4,
+                      blurStyle: BlurStyle.inner,
+                    ),
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      offset: const Offset(-1, -1),
+                      blurRadius: 2,
+                      blurStyle: BlurStyle.inner,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      offset: const Offset(1, 1),
+                      blurRadius: 2,
+                      blurStyle: BlurStyle.inner,
+                    ),
+                    const BoxShadow(
+                      color: Colors.white,
+                      offset: Offset(-1, -1),
+                      blurRadius: 2,
+                      blurStyle: BlurStyle.inner,
+                    ),
+                  ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                widget.label,
+                style: const TextStyle(fontFamily: 'SpaceGrotesk', 
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF767575),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _BlockButton(
+                    icon: Icons.remove,
+                    isDark: widget.isDark,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      widget.onDecrement();
+                    },
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        widget.value,
+                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: widget.color,
+                        ),
+                      ),
+                      if (widget.caption != null)
+                        Text(
+                          widget.caption!,
+                          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                            fontSize: 6,
+                            fontWeight: FontWeight.bold,
+                            color: widget.color.withValues(alpha: 0.5),
+                          ),
+                        ),
+                    ],
+                  ),
+                  _BlockButton(
+                    icon: Icons.add,
+                    isDark: widget.isDark,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      widget.onIncrement();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BlockButton extends StatefulWidget {
+  final IconData icon;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _BlockButton({
+    required this.icon,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  State<_BlockButton> createState() => _BlockButtonState();
+}
+
+class _BlockButtonState extends State<_BlockButton> {
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.85),
+      onTapUp: (_) => setState(() => _scale = 1.0),
+      onTapCancel: () => setState(() => _scale = 1.0),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 80),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: widget.isDark
+                  ? [const Color(0xFF383838), const Color(0xFF111111)]
+                  : [
+                      const Color(0xFFFFFFFF),
+                      const Color(0xFFE0E0E0),
+                    ],
+            ),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: widget.isDark
+                  ? Colors.black.withValues(alpha: 0.5)
+                  : const Color(0xFFCCCCCC),
+              width: 1,
+            ),
+            boxShadow: widget.isDark
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      offset: const Offset(1, 1.5),
+                      blurRadius: 3,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      offset: const Offset(0.5, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
+          ),
+          child: Icon(
+            widget.icon,
+            size: 16,
+            color: const Color(0xFF767575),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -97,11 +97,20 @@ class ExposureCalculator {
     return log((effectiveLux * 100) / calibrationConstant) / ln2;
   }
 
-  /// Find the closest predefined value
+  /// Find the closest predefined value (using logarithmic distance for EV accuracy)
   static T findClosest<T extends num>(double target, List<T> values) {
     if (values.isEmpty) return target as T;
-    return values.reduce((a, b) =>
-        (a.toDouble() - target).abs() < (b.toDouble() - target).abs() ? a : b);
+    if (target <= 0) return values.first;
+    
+    // Use logarithmic distance (base e is fine, it scales linearly to base 2)
+    double targetLog = log(target);
+    
+    return values.reduce((a, b) {
+      if (a <= 0 || b <= 0) return a; // safeguard
+      double distA = (log(a.toDouble()) - targetLog).abs();
+      double distB = (log(b.toDouble()) - targetLog).abs();
+      return distA < distB ? a : b;
+    });
   }
 
   /// Core formula based on: (N^2)/t = (Lux * ISO) / C
@@ -122,8 +131,9 @@ class ExposureCalculator {
 
   static double calculateShutterSpeed(double lux, double aperture, int iso, {NdFilter ndFilter = NdFilter.none, bool halfSteps = false}) {
     List<double> options = halfSteps ? shutterValuesHalf : shutterValues;
-    if (lux <= 0) return options.first;
+    if (lux <= 0 || aperture <= 0 || iso <= 0) return options.first;
     double effectiveLux = lux / ndFilter.factor;
+    if (effectiveLux <= 0) return options.first;
     
     // t = (N^2 * C) / (Lux * ISO)
     double exactShutter = (aperture * aperture * calibrationConstant) / (effectiveLux * iso);
@@ -132,7 +142,7 @@ class ExposureCalculator {
 
   static int calculateIso(double lux, double aperture, double shutterSpeed, {NdFilter ndFilter = NdFilter.none, bool halfSteps = false}) {
     List<int> options = halfSteps ? isoValuesHalf : isoValues;
-    if (lux <= 0 || shutterSpeed <= 0) return options.first;
+    if (lux <= 0 || shutterSpeed <= 0 || aperture <= 0) return options.first;
     double effectiveLux = lux / ndFilter.factor;
     if (effectiveLux <= 0) return options.first;
     

@@ -24,19 +24,26 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _initApp() async {
-    // 1. Start progress animation (minimum 2s duration for brand presence)
+    // 1. Start progress animation
     final startTime = DateTime.now();
     _controller.forward();
 
-    // 2. Pre-load check (already bundled, but we can wait for engine readiness if needed)
-    // No longer needs GoogleFonts.pendingFonts() as they are in pubspec.yaml
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // 3. Wait for ExposureState to be fully ready (SharedPreferences, etc.)
     final state = Provider.of<ExposureState>(context, listen: false);
-    while (!state.isInitialized) {
-      await Future.delayed(const Duration(milliseconds: 100));
+
+    // 2. Pre-load assets to prevent initial frame jank
+    try {
+      await Future.wait([
+        precacheImage(const AssetImage('assets/images/noise.jpg'), context),
+        precacheImage(const AssetImage('assets/logo.png'), context),
+        // Wait for ExposureState to be fully ready (SharedPreferences, etc.)
+        _waitForState(state),
+        Future.delayed(const Duration(milliseconds: 500)),
+      ]);
+    } catch (e) {
+      debugPrint('Pre-caching failed: $e');
     }
+
+    if (!mounted) return;
 
     // 4. Ensure we show the splash for at least 2 seconds for smooth transition
     final elapsed = DateTime.now().difference(startTime);
@@ -54,6 +61,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           transitionDuration: const Duration(milliseconds: 800),
         ),
       );
+    }
+  }
+
+  Future<void> _waitForState(ExposureState state) async {
+    while (!state.isInitialized) {
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 

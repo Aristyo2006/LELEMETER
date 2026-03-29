@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -7,30 +8,30 @@ import 'film_database.dart';
 import 'ui_helpers.dart';
 
 class FilmDatabaseScreen extends StatefulWidget {
-  const FilmDatabaseScreen({super.key});
+  final ScrollController? scrollController;
+  const FilmDatabaseScreen({super.key, this.scrollController});
 
   @override
   State<FilmDatabaseScreen> createState() => _FilmDatabaseScreenState();
 }
 
-class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
-    with TickerProviderStateMixin {
+class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _entranceController;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   FilmType? _activeFilter; // null = show all
   String? _activeBrandFilter; // null = show all brands
-  late final AnimationController _entranceController;
 
   @override
   void initState() {
     super.initState();
     _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1000),
     );
-    // Start animation shortly after build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _entranceController.forward();
+    // Delay staggered animation to allow modal sheet to open smoothly first
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) _entranceController.forward();
     });
   }
 
@@ -77,17 +78,44 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
       sortedFilms.addAll(groupedStocks[brand]!);
     }
 
-    final barHeight = 64 + MediaQuery.of(context).padding.top;
+    return Container(
+      color: backgroundColor,
+      child: CustomScrollView(
+        controller: widget.scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          // 1. Drag Handle (Now part of the Scrollable area -> Draggable!)
+          SliverToBoxAdapter(
+            child: Center(
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
 
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: Stack(
-        children: [
-          // ─── Content (First in Stack, so it sits behind the bar) ───────
-          Positioned.fill(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16, barHeight + 16, 16, 100),
-              children: [
+          // 2. Pinned Header with Backdrop Blur
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _SliverAppBarDelegate(
+              minHeight: 64,
+              maxHeight: 64,
+              child: RepaintBoundary(
+                child: _buildTopBar(context, state, primaryColor, isDark, surfaceHigh),
+              ),
+            ),
+          ),
+
+          // 3. Scrollable Content
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
                 // Currently Loaded Banner
                 _buildCurrentlyLoaded(state, primaryColor, isDark),
                 const SizedBox(height: 20),
@@ -122,16 +150,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                 sortedFilms.isEmpty
                     ? _buildEmptyState(primaryColor)
                     : _buildShelf(context, groupedStocks, sortedBrands, state, primaryColor, isDark),
-              ],
+              ]),
             ),
-          ),
-
-          // ─── Top App Bar (Second in Stack, so it overlays the content) ──
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _buildTopBar(context, state, primaryColor, isDark, surfaceHigh),
           ),
         ],
       ),
@@ -162,8 +182,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
     Color surfaceHigh,
   ) {
     return Container(
-          height: 64 + MediaQuery.of(context).padding.top,
-          padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+          height: 64,
+          padding: EdgeInsets.zero,
           decoration: BoxDecoration(
             color: (isDark ? const Color(0xFF1F2020) : surfaceHigh)
                 .withValues(alpha: state.enableBlur ? 0.82 : 1.0),
@@ -179,7 +199,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
           ),
           child: Stack(
             children: [
-              // Back Button (Aligned Left)
+              // Close Button (Aligned Left)
               Align(
                 alignment: Alignment.centerLeft,
                 child: GestureDetector(
@@ -208,9 +228,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                       ],
                     ),
                     child: Icon(
-                      Icons.arrow_back,
+                      Icons.keyboard_arrow_down,
                       color: isDark ? Colors.white70 : Colors.black87,
-                      size: 20,
+                      size: 24,
                     ),
                   ),
                 ),
@@ -463,8 +483,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
   ) {
     final filters = [
       (label: 'ALL', type: null, icon: Icons.grid_view),
-      (label: 'NEGATIVE', type: FilmType.color_negative, icon: Icons.camera_alt_outlined),
-      (label: 'B&W', type: FilmType.black_white, icon: Icons.contrast),
+      (label: 'NEGATIVE', type: FilmType.colorNegative, icon: Icons.camera_alt_outlined),
+      (label: 'B&W', type: FilmType.blackWhite, icon: Icons.contrast),
       (label: 'SLIDE', type: FilmType.slide, icon: Icons.filter_vintage),
       (label: 'CINE', type: FilmType.cine, icon: Icons.movie_filter_outlined),
     ];
@@ -474,6 +494,14 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
       child: Row(
         children: filters.map((f) {
           final isActive = _activeFilter == f.type;
+          
+          // Color coding for DIFFERENT film types (User's specific preference)
+          Color typeColor = primaryColor;
+          if (f.type == FilmType.colorNegative) typeColor = Colors.blue; 
+          if (f.type == FilmType.blackWhite) typeColor = Colors.grey; 
+          if (f.type == FilmType.slide) typeColor = Colors.green; 
+          if (f.type == FilmType.cine) typeColor = Colors.red;
+
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
@@ -490,8 +518,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            primaryColor.withValues(alpha: 0.9),
-                            primaryColor.withValues(alpha: 0.6),
+                            typeColor.withValues(alpha: 0.9),
+                            typeColor.withValues(alpha: 0.6),
                           ],
                         )
                       : LinearGradient(
@@ -504,33 +532,25 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                                 ]
                               : [
                                   const Color(0xFFFFFFFF),
-                                  const Color(0xFFE5E5E5),
+                                  const Color(0xFFE0E0E0),
                                 ],
                         ),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isActive
-                        ? primaryColor.withValues(alpha: 0.5)
-                        : (isDark
-                            ? const Color(0xFF484848)
-                            : const Color(0xFFD4D4D4)),
-                    width: 1,
-                  ),
-                  boxShadow: isActive
+                  boxShadow: isActive 
                       ? [
                           BoxShadow(
-                            color: primaryColor.withValues(alpha: 0.4),
+                            color: typeColor.withValues(alpha: 0.4),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
                           BoxShadow(
-                            color: primaryColor.withValues(alpha: 0.2),
+                            color: typeColor.withValues(alpha: 0.2),
                             blurRadius: 2,
                             offset: const Offset(0, 1),
                             blurStyle: BlurStyle.inner,
                           ),
                         ]
-                      : isDark ? [
+                      : (isDark ? [
                           // Hard bottom shadow - lifts button off surface
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.9),
@@ -550,7 +570,19 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                             offset: const Offset(0, -0.5),
                             blurStyle: BlurStyle.inner,
                           ),
-                        ] : null,
+                        ] : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 2,
+                            offset: const Offset(1, 1),
+                          ),
+                        ]),
+                  border: Border.all(
+                    color: isActive 
+                        ? typeColor.withValues(alpha: 0.5)
+                        : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05)),
+                    width: 1,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -558,10 +590,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                       f.icon,
                       size: 13,
                       color: isActive
-                          ? Colors.black
-                          : (isDark
-                              ? const Color(0xFFACABAA)
-                              : const Color(0xFF767575)),
+                          ? (f.type == FilmType.blackWhite ? Colors.black : Colors.white)
+                          : typeColor.withValues(alpha: 0.85), // Persistent Color Coding
                     ),
                     const SizedBox(width: 5),
                     Text(
@@ -572,10 +602,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
                         color: isActive
-                            ? Colors.black
-                            : (isDark
-                                ? const Color(0xFFACABAA)
-                                : const Color(0xFF767575)),
+                            ? (f.type == FilmType.blackWhite ? Colors.black : Colors.white)
+                            : typeColor.withValues(alpha: 0.85), // Persistent Color Coding
                       ),
                     ),
                   ],
@@ -668,9 +696,11 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                   ),
                 ],
               ),
-              child: CustomPaint(
-                painter: _WoodGrainPainter(),
-                child: Container(),
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _WoodGrainPainter(),
+                  child: Container(),
+                ),
               ),
             ),
             // Film spines row
@@ -681,25 +711,29 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
                 itemCount: films.length,
                 itemBuilder: (context, index) {
-                  final delay = index * 0.08;
-                  final animation = CurvedAnimation(
+                  // Reduced stagger for better performance while keeping the effect
+                  final Animation<double> spineAnim = CurvedAnimation(
                     parent: _entranceController,
-                    curve: Interval(delay.clamp(0.0, 0.8), (delay + 0.4).clamp(0.0, 1.0), curve: Curves.easeOutBack),
+                    curve: Interval(
+                      (index * 0.05).clamp(0.0, 1.0),
+                      ((index * 0.05) + 0.4).clamp(0.0, 1.0),
+                      curve: Curves.easeOutCubic,
+                    ),
                   );
-                  return AnimatedBuilder(
-                    animation: animation,
-                    builder: (context, child) {
-                      return Transform.translate(
-                        offset: Offset(0, 40 * (1 - animation.value)),
-                        child: Opacity(
-                          opacity: animation.value.clamp(0.0, 1.0),
-                          child: child,
+
+                  return FadeTransition(
+                    opacity: spineAnim,
+                    child: SlideTransition(
+                      position: spineAnim.drive(
+                        Tween<Offset>(
+                          begin: const Offset(0.2, 0.0),
+                          end: Offset.zero,
                         ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _buildFilmSpine(context, films[index], state, primaryColor, isDark),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _buildFilmSpine(context, films[index], state, primaryColor, isDark),
+                      ),
                     ),
                   );
                 },
@@ -756,8 +790,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
       builder: (context) {
         return GestureDetector(
           onTap: () {
-            state.selectFilm(film);
-            Navigator.pop(context);
+            _showSelectionConfirmationDialog(context, film, state, primaryColor, isDark);
           },
           onLongPressStart: (d) {
             final RenderBox? box = context.findRenderObject() as RenderBox?;
@@ -781,22 +814,23 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
   }) {
     final spineColor = _getSpineColor(film.type);
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      width: 90,
-      transform: (isSelected && !isHighlighted)
-          ? Matrix4.translationValues(0, -8, 0)
-          : Matrix4.identity(),
-        decoration: BoxDecoration(
-          color: spineColor,
-          image: skeuomorphicNoise,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: isSelected
-                ? primaryColor
-                : Colors.black.withValues(alpha: 0.4),
-            width: isSelected ? 2 : 1,
-          ),
+    return RepaintBoundary(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 90,
+        transform: (isSelected && !isHighlighted)
+            ? Matrix4.translationValues(0, -8, 0)
+            : Matrix4.identity(),
+          decoration: BoxDecoration(
+            color: spineColor,
+            image: skeuomorphicNoise,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: isSelected
+                  ? primaryColor
+                  : Colors.black.withValues(alpha: 0.4),
+              width: isSelected ? 2 : 1,
+            ),
           boxShadow: [
             if (isSelected)
               BoxShadow(
@@ -894,6 +928,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
               ),
             ),
           ],
+        ),
       ),
     );
   }
@@ -920,7 +955,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
       barrierLabel: '',
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 180),
-      transitionBuilder: (_, anim, __, child) {
+      transitionBuilder: (context, anim, animation2, child) {
         final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
         return FadeTransition(
           opacity: anim,
@@ -931,7 +966,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
           ),
         );
       },
-      pageBuilder: (ctx, _, __) {
+      pageBuilder: (ctx, anim, animation2) {
         final screen = MediaQuery.of(context).size;
         // Center callout horizontally on the spine
         final targetX = spineRect.center.dx;
@@ -1167,6 +1202,234 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
       },
     );
   }
+  void _showSelectionConfirmationDialog(
+    BuildContext context,
+    FilmStock film,
+    ExposureState state,
+    Color primaryColor,
+    bool isDark,
+  ) {
+    final typeColor = _getTypeColor(film.type);
+    final spineColor = _getSpineColor(film.type);
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Confirm Selection',
+      barrierColor: Colors.black.withValues(alpha: 0.1),
+      transitionDuration: const Duration(milliseconds: 250),
+      transitionBuilder: (context, anim, animation2, child) {
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutQuint),
+            ),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, anim, animation2) {
+        return Center(
+          child: Stack(
+            children: [
+              // Blurred backdrop
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: state.enableBlur
+                      ? BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: Container(color: Colors.black.withValues(alpha: 0.4)),
+                        )
+                      : Container(color: Colors.black.withValues(alpha: 0.85)),
+                ),
+              ),
+              // Centered Card
+              Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    width: MediaQuery.of(ctx).size.width * 0.85,
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: (isDark ? const Color(0xFF1A1B1B) : Colors.white).withValues(alpha: 0.98),
+                      image: skeuomorphicNoise,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: spineColor.withValues(alpha: 0.3),
+                          blurRadius: 30,
+                          spreadRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: spineColor,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: spineColor.withValues(alpha: 0.5),
+                                    blurRadius: 12,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: _getFilmIconWidget(film.type, size: 28),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    film.name.toUpperCase(),
+                                    style: TextStyle(
+                                      fontFamily: 'SpaceGrotesk',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    film.brand.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontFamily: 'SpaceGrotesk',
+                                      fontSize: 10,
+                                      letterSpacing: 2,
+                                      color: Color(0xFFACABAA),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildStatChip('ISO', '${film.iso}', typeColor),
+                            _buildStatChip('TYPE', _getShortTypeLabel(film.type), typeColor),
+                            if (film.pushable)
+                              _buildStatChip('PUSH', 'YES', const Color(0xFF8EFF71)),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'FILM CHARACTERISTICS',
+                          style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor.withValues(alpha: 0.7),
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          film.desc.isNotEmpty ? film.desc : "No description available for this stock.",
+                          style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
+                            fontSize: 11,
+                            height: 1.5,
+                            color: (isDark ? Colors.white70 : Colors.black87),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                ),
+                                child: Text(
+                                  'CANCEL',
+                                  style: TextStyle(
+                                    fontFamily: 'SpaceGrotesk',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 2,
+                                    color: isDark ? Colors.white38 : Colors.black38,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () {
+                                  state.selectFilm(film);
+                                  // Use the direct navigator to pop both dialog and screen
+                                  Navigator.of(ctx).pop();
+                                  Navigator.of(context).pop();
+                                },
+                                child: Container(
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: primaryColor,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: primaryColor.withValues(alpha: 0.3),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'LOAD FILM',
+                                      style: TextStyle(
+                                        fontFamily: 'SpaceGrotesk',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildStatChip(String label, String value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1204,9 +1467,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
 
   Color _getSpineColor(FilmType type) {
     switch (type) {
-      case FilmType.color_negative:
+      case FilmType.colorNegative:
         return const Color(0xFF1A3A5C);
-      case FilmType.black_white:
+      case FilmType.blackWhite:
         return const Color(0xFF2A2A2A);
       case FilmType.slide:
         return const Color(0xFF1A4A28);
@@ -1353,9 +1616,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
 
   Color _getTypeColor(FilmType type) {
     switch (type) {
-      case FilmType.color_negative:
+      case FilmType.colorNegative:
         return const Color(0xFFFFB300);
-      case FilmType.black_white:
+      case FilmType.blackWhite:
         return const Color(0xFFACABAA);
       case FilmType.slide:
         return const Color(0xFF3DB832); // darker green - readable on light bg
@@ -1368,7 +1631,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
 
   Widget _getFilmIconWidget(FilmType type, {double size = 40}) {
     switch (type) {
-      case FilmType.color_negative:
+      case FilmType.colorNegative:
         return SvgPicture.asset(
           'assets/Film.svg',
           width: size,
@@ -1384,7 +1647,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
           colorFilter:
               const ColorFilter.mode(Colors.white, BlendMode.srcIn),
         );
-      case FilmType.black_white:
+      case FilmType.blackWhite:
         return Icon(Icons.contrast, size: size, color: Colors.white);
       case FilmType.cine:
         return Icon(Icons.movie_filter, size: size, color: Colors.white);
@@ -1393,9 +1656,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
 
   String _getShortTypeLabel(FilmType type) {
     switch (type) {
-      case FilmType.color_negative:
+      case FilmType.colorNegative:
         return 'NEG';
-      case FilmType.black_white:
+      case FilmType.blackWhite:
         return 'B&W';
       case FilmType.slide:
         return 'SLIDE';
@@ -1405,10 +1668,43 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen>
   }
 }
 
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  _SliverAppBarDelegate({
+    required this.minHeight,
+    required this.maxHeight,
+    required this.child,
+  });
+
+  final double minHeight;
+  final double maxHeight;
+  final Widget child;
+
+  @override
+  double get minExtent => minHeight;
+  @override
+  double get maxExtent => math.max(maxHeight, minHeight);
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return SizedBox.expand(child: child);
+  }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
+    return maxHeight != oldDelegate.maxHeight ||
+        minHeight != oldDelegate.minHeight ||
+        child != oldDelegate.child;
+  }
+}
+
 // Wooden grain painter for shelf backing
 class _WoodGrainPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    // CLIP to ensure grain doesn't look like 'hair' bleeding out
+    canvas.clipRect(Offset.zero & size);
+    
     final paint = Paint()
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
