@@ -97,6 +97,13 @@ class ExposureCalculator {
     return log((effectiveLux * 100) / calibrationConstant) / ln2;
   }
 
+  /// Calculates the EV represented by specific settings (at ISO 100)
+  static double calculateSettingsEv(double aperture, double shutterSpeed, int iso) {
+    if (aperture <= 0 || shutterSpeed <= 0 || iso <= 0) return 0;
+    // 2^EV = (N^2 / t) * (100 / ISO)
+    return log((aperture * aperture) / shutterSpeed * (100 / iso)) / ln2;
+  }
+
   /// Find the closest predefined value (using logarithmic distance for EV accuracy)
   static T findClosest<T extends num>(double target, List<T> values) {
     if (values.isEmpty) return target as T;

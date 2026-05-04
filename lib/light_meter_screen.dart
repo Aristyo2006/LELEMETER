@@ -9,6 +9,7 @@ import 'film_database_screen.dart';
 import 'package:flutter/services.dart';
 import 'settings_screen.dart';
 import 'ui_helpers.dart';
+import 'camera_viewfinder_screen.dart';
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
@@ -490,6 +491,21 @@ class LightMeterScreen extends StatelessWidget {
   Widget _buildQuickControls(BuildContext context, ExposureState state) {
     return Row(
       children: [
+        Expanded(
+          child: _build3DQuickButton(
+            label: 'VIEWFINDER',
+            icon: Icons.camera_alt_outlined,
+            isActive: false,
+            color: const Color(0xFF00E5FF),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AnalogViewfinderScreen()),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 12),
         Expanded(
           child: _build3DQuickButton(
             label: state.isLocked ? 'LOCKED' : 'LOCK SENSOR',

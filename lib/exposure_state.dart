@@ -41,6 +41,11 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   double _currentLux = 0.0;
   double get currentLux => _currentLux;
   
+  double _cameraLux = 0.0;
+  double get cameraLux => _cameraLux;
+
+  bool _isUsingCameraSensor = false;
+  bool get isUsingCameraSensor => _isUsingCameraSensor;
 
 
   FilmStock? _selectedFilm;
@@ -53,7 +58,10 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   double _calibrationFactor = 1.0;
   double get calibrationFactor => _calibrationFactor;
 
-  double get effectiveLux => (_isLocked ? _lockedLux : _currentLux) * _calibrationFactor;
+  double get effectiveLux {
+    if (_isUsingCameraSensor) return _cameraLux * _calibrationFactor;
+    return (_isLocked ? _lockedLux : _currentLux) * _calibrationFactor;
+  }
 
   // Settings
   int _iso = ExposureCalculator.isoValues[2]; // 160
@@ -428,7 +436,40 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  void setCameraLux(double lux) {
+    if (_cameraLux != lux) {
+      _cameraLux = lux;
+      if (_isUsingCameraSensor) {
+        _recalculate();
+        notifyListeners();
+      }
+    }
+  }
 
+  void updateExposureFromCamera(double ev) {
+    // Convert EV back to Lux so it fits into the existing effectiveLux logic
+    // Lux = 2.5 * 2^EV
+    double lux = 2.5 * math.pow(2.0, ev);
+    if (_cameraLux != lux) {
+      _cameraLux = lux;
+      if (_isUsingCameraSensor) {
+        _recalculate();
+        Future.microtask(() {
+          notifyListeners();
+        });
+      }
+    }
+  }
+
+  void setUsingCameraSensor(bool value) {
+    if (_isUsingCameraSensor != value) {
+      _isUsingCameraSensor = value;
+      _recalculate();
+      Future.microtask(() {
+        notifyListeners();
+      });
+    }
+  }
 
   Future<void> _fetchSensorName() async {
     const platform = MethodChannel('com.arWRKS.lelemeter/sensor');
