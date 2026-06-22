@@ -40,8 +40,8 @@ class FilmStock {
 
 class FilmDatabase {
   static const List<FilmStock> stocks = [
-    FilmStock(name: "Kodak Portra 160", brand: "Kodak", type: FilmType.colorNegative, iso: 160, desc: "A smooth portrait film with natural colors and fine detail, perfect for bright daylight.", recommendedOverexposure: 1),
-    FilmStock(name: "Kodak Portra 400", brand: "Kodak", type: FilmType.colorNegative, iso: 400, desc: "A favorite among photographers, very forgiving with warm tones and flexible exposure.", recommendedOverexposure: 1),
+    FilmStock(name: "Kodak Portra 160", brand: "Kodak", type: FilmType.colorNegative, iso: 160, desc: "A smooth portrait film with natural colors and fine detail.", recommendedOverexposure: 1),
+    FilmStock(name: "Kodak Portra 400", brand: "Kodak", type: FilmType.colorNegative, iso: 400, desc: "A favorite among photographers, very forgiving with warm tones.", recommendedOverexposure: 1),
     FilmStock(name: "Kodak Portra 800", brand: "Kodak", type: FilmType.colorNegative, iso: 800, desc: "Great for low light with visible grain and a soft cinematic feel.", recommendedOverexposure: 1),
     FilmStock(name: "Kodak Gold 200", brand: "Kodak", type: FilmType.colorNegative, iso: 200, desc: "Classic warm tones with a nostalgic look, perfect for outdoor shooting.", recommendedOverexposure: 0.5),
     FilmStock(name: "Kodak UltraMax 400", brand: "Kodak", type: FilmType.colorNegative, iso: 400, desc: "A reliable everyday film that performs well in many lighting conditions.", recommendedOverexposure: 0.5),
@@ -49,17 +49,19 @@ class FilmDatabase {
     FilmStock(name: "Kodak Pro Image 100", brand: "Kodak", type: FilmType.colorNegative, iso: 100, desc: "Clean and natural colors, best used in bright daylight.", recommendedOverexposure: 0.5),
     FilmStock(name: "Kodak Ektar 100", brand: "Kodak", type: FilmType.colorNegative, iso: 100, desc: "Highly saturated colors with extremely fine grain, great for landscapes.", recommendedOverexposure: 0),
 
-    FilmStock(name: "Fujifilm Superia 100", brand: "Fujifilm", type: FilmType.colorNegative, iso: 100, desc: "Cool tones with clean results, ideal for daylight photography.", recommendedOverexposure: 0.5),
-    FilmStock(name: "Fujifilm Superia 200", brand: "Fujifilm", type: FilmType.colorNegative, iso: 200, desc: "Balanced colors with a slightly cool look, great for everyday use.", recommendedOverexposure: 0.5),
-    FilmStock(name: "Fujifilm Superia X-TRA 400", brand: "Fujifilm", type: FilmType.colorNegative, iso: 400, desc: "Slightly contrasty with cool tones, works well in mixed lighting.", recommendedOverexposure: 0.5),
-    FilmStock(name: "Fujifilm C200", brand: "Fujifilm", type: FilmType.colorNegative, iso: 200, desc: "Simple and clean film with neutral colors for casual shooting.", recommendedOverexposure: 0.5),
-    FilmStock(name: "Fujifilm Industrial 100", brand: "Fujifilm", type: FilmType.colorNegative, iso: 100, desc: "Neutral color rendering with consistent and clean results.", recommendedOverexposure: 0.5),
+    FilmStock(name: "Fujifilm Superia 100", brand: "Fujifilm", type: FilmType.colorNegative, iso: 100, desc: "Cool tones with clean results.", recommendedOverexposure: 0.5),
+    FilmStock(name: "Fujifilm Superia 200", brand: "Fujifilm", type: FilmType.colorNegative, iso: 200, desc: "Balanced colors with a slightly cool look.", recommendedOverexposure: 0.5),
+    FilmStock(name: "Fujifilm Superia 400", brand: "Fujifilm", type: FilmType.colorNegative, iso: 400, desc: "Slightly contrasty with cool tones.", recommendedOverexposure: 0.5),
+    FilmStock(name: "Fujifilm 400H", brand: "Fujifilm", type: FilmType.colorNegative, iso: 400, desc: "Pro film with pastel tones and wide exposure latitude.", recommendedOverexposure: 1.0),
+    FilmStock(name: "Agfa Vista 200", brand: "Agfa", type: FilmType.colorNegative, iso: 200, desc: "Saturated colors with high contrast.", recommendedOverexposure: 0.5),
 
-    FilmStock(name: "Ilford HP5 Plus", brand: "Ilford", type: FilmType.blackWhite, iso: 400, desc: "A flexible black and white film with classic grain, great for street and pushing.", pushable: true),
+    FilmStock(name: "Ilford HP 5 Plus 400", brand: "Ilford", type: FilmType.blackWhite, iso: 400, desc: "A flexible black and white film with classic grain.", pushable: true),
     FilmStock(name: "Ilford FP4 Plus", brand: "Ilford", type: FilmType.blackWhite, iso: 125, desc: "Fine grain with smooth tones, ideal for detail and controlled lighting."),
     FilmStock(name: "Ilford Delta 100", brand: "Ilford", type: FilmType.blackWhite, iso: 100, desc: "Very fine grain with a modern, sharp look."),
     FilmStock(name: "Ilford Delta 400", brand: "Ilford", type: FilmType.blackWhite, iso: 400, desc: "Balanced contrast and smooth grain for versatile shooting."),
-    FilmStock(name: "Ilford Delta 3200", brand: "Ilford", type: FilmType.blackWhite, iso: 3200, desc: "Perfect for low light with strong grain and dramatic contrast."),
+    FilmStock(name: "Ilford Delta 3200", brand: "Ilford", type: FilmType.blackWhite, iso: 3200, desc: "Perfect for low light with strong grain."),
+    FilmStock(name: "Polaroid 600", brand: "Polaroid", type: FilmType.colorNegative, iso: 640, desc: "Classic instant look with deep shadows."),
+    FilmStock(name: "Polaroid 669", brand: "Polaroid", type: FilmType.colorNegative, iso: 80, desc: "Legendary peel-apart color film."),
 
     FilmStock(name: "Kodak Tri-X 400", brand: "Kodak", type: FilmType.blackWhite, iso: 400, desc: "Iconic black and white film with gritty grain and strong contrast.", pushable: true),
     FilmStock(name: "Kodak T-Max 100", brand: "Kodak", type: FilmType.blackWhite, iso: 100, desc: "Modern B&W film with fine grain and high detail."),

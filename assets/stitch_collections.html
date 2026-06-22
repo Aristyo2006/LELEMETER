@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Silver Halide Log - Collections</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&amp;family=JetBrains+Mono:wght@400;700;800&amp;family=Cedarville+Cursive&amp;family=Source+Serif+4:ital,wght@0,400;0,600;1,400&amp;family=Caveat:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        .folder-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .polaroid-shadow {
+            box-shadow: 0 10px 20px -10px rgba(0,0,0,0.15);
+        }
+
+        .felt-texture {
+            position: relative;
+        }
+        .felt-texture::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: url("https://www.transparenttextures.com/patterns/felt.png");
+            opacity: 0.05;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .manila-gradient {
+            background: linear-gradient(135deg, #fdfbf0 0%, #f7f1d5 100%);
+        }
+
+        .pencil-line {
+            background-image: linear-gradient(to right, #ccc 10%, rgba(255, 255, 255, 0) 0%);
+            background-position: bottom;
+            background-size: 8px 1px;
+            background-repeat: repeat-x;
+        }
+
+        /* Perspective for the stack */
+        .folder-stack {
+            perspective: 1000px;
+        }
+
+        .folder-transition {
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .folder-transition:hover {
+            transform: translateY(-12px) rotateX(2deg);
+            z-index: 40 !important;
+        }
+        
+        .handwritten {
+            font-family: 'Caveat', cursive;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-container": "#848484",
+                        "surface-tint": "#5e5e5e",
+                        "surface-container-highest": "#e2e2e2",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#56657c",
+                        "background": "#f9f9f9",
+                        "inverse-primary": "#c6c6c6",
+                        "outline": "#7e7576",
+                        "warm-surface": "#fdf8f8",
+                        "on-surface": "#1b1b1b",
+                        "primary-fixed-dim": "#c6c6c6",
+                        "on-primary-fixed-variant": "#474747",
+                        "paper-base": "#fdf8f8",
+                        "divider-cyan": "#c4c7c7",
+                        "secondary": "#505f76",
+                        "on-tertiary-fixed-variant": "#474747",
+                        "on-primary-container": "#848484",
+                        "surface-container-low": "#f3f3f3",
+                        "on-error": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#1b1b1b",
+                        "ink-black": "#2a2a2a",
+                        "secondary-fixed": "#d4e3ff",
+                        "tertiary": "#000000",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#1b1b1b",
+                        "surface": "#f9f9f9",
+                        "washi-tape": "rgba(235, 230, 200, 0.4)",
+                        "on-surface-variant": "#4c4546",
+                        "on-primary-fixed": "#1b1b1b",
+                        "inverse-on-surface": "#f1f1f1",
+                        "tertiary-container": "#1b1b1b",
+                        "surface-container": "#eeeeee",
+                        "surface-bright": "#f9f9f9",
+                        "inverse-surface": "#303030",
+                        "on-secondary-fixed": "#0c1c30",
+                        "secondary-fixed-dim": "#b8c7e2",
+                        "secondary-container": "#d4e3ff",
+                        "on-secondary-fixed-variant": "#39485e",
+                        "on-background": "#1b1b1b",
+                        "tertiary-fixed-dim": "#c6c6c6",
+                        "tertiary-fixed": "#e2e2e2",
+                        "surface-container-high": "#e8e8e8",
+                        "surface-dim": "#dadada",
+                        "primary-fixed": "#e2e2e2",
+                        "on-error-container": "#93000a",
+                        "primary": "#000000",
+                        "on-primary": "#ffffff",
+                        "outline-variant": "#cfc4c5",
+                        "surface-variant": "#e2e2e2",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "16px",
+                        "journal-line": "2rem",
+                        "base": "8px",
+                        "stack-sm": "4px",
+                        "stack-lg": "32px",
+                        "image-frame": "12px",
+                        "margin-mobile": "24px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Playfair Display"],
+                        "script-journal": ["Cedarville Cursive"],
+                        "headline-md": ["Playfair Display"],
+                        "data-mono": ["JetBrains Mono"],
+                        "body-lg": ["\"Source Serif 4\""],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.05em", "fontWeight": "700"}],
+                        "script-journal": ["24px", {"lineHeight": "2rem", "fontWeight": "400"}],
+                        "headline-md": ["20px", {"lineHeight": "1.4", "fontWeight": "600"}],
+                        "data-mono": ["14px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "label-caps": ["10px", {"lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "800"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-warm-surface text-on-surface felt-texture min-h-screen">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky z-50 bg-warm-surface border-b-2 border-primary">
+<div class="flex justify-between items-center px-margin-mobile py-4 max-w-[768px] mx-auto">
+<div class="flex items-center gap-4">
+<button class="hover:bg-surface-container transition-colors p-2 Active: translate-y-0.5 transition-transform duration-75">
+<span class="material-symbols-outlined text-primary">menu</span>
+</button>
+<h1 class="font-data-mono text-headline-md uppercase tracking-widest text-primary">PHOTO LOGBOOK</h1>
+</div>
+<button class="hover:bg-surface-container transition-colors p-2 Active: translate-y-0.5 transition-transform duration-75">
+<span class="material-symbols-outlined text-primary">inventory_2</span>
+</button>
+</div>
+</header>
+<main class="max-w-[768px] mx-auto px-margin-mobile pt-8 pb-32">
+<!-- Header Section -->
+<header class="mb-12">
+<div class="flex items-end justify-between border-b border-outline-variant pb-4">
+<div>
+<span class="font-data-mono text-label-caps opacity-60">ARCHIVE SYSTEM v2.4</span>
+<h2 class="font-display-lg text-display-lg mt-1">Collections</h2>
+</div>
+<div class="text-right">
+<p class="font-data-mono text-label-caps uppercase opacity-60">Last Filed</p>
+<p class="font-data-mono text-sm font-bold uppercase tracking-tighter">Oct 14, 2024</p>
+</div>
+</div>
+</header>
+<!-- Folder Stack -->
+<div class="folder-stack space-y-[-40px]">
+<!-- Folder 1 -->
+<div class="folder-transition relative group z-30">
+<!-- Tab -->
+<div class="flex">
+<div class="manila-gradient w-48 h-10 rounded-t-lg border-t border-x border-black/10 flex items-center px-4 ml-4">
+<span class="handwritten text-xl text-ink-black/80">Lofoten Winter '24</span>
+</div>
+</div>
+<!-- Body -->
+<div class="manila-gradient w-full min-h-[220px] rounded-r-lg rounded-bl-lg p-6 border border-black/10 folder-shadow relative overflow-hidden">
+<div class="flex gap-6 items-start relative z-20">
+<!-- Polaroid -->
+<div class="bg-white p-3 polaroid-shadow -rotate-2 border border-black/5 flex-shrink-0">
+<div class="w-32 h-32 bg-surface-dim overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="A moody black and white film photograph of snow-capped Norwegian mountains rising sharply from a dark, freezing sea in Lofoten. The image has heavy film grain, deep contrast, and the soft blur typical of vintage 35mm lenses. The lighting is low-key, capturing the ethereal glow of the Arctic winter sun just below the horizon." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBB8xv84qSeRM-CAuCJQCvrVJyog4mz0W383wxH-QCJylXqZPKKQSDqzkDYuqYKpLNlGhKiOe_bEgKjngnC9sY58k0Hxr-hSeMAgTAuJRJd2u-HYtj-iry0Z5kJWIdGfwQLSbKAH_iOSzOG8ukI-OsoDCs5o_Dk6hCx51AgXx4bi0eNWtiDU2krJX-DheO7PCgYdC_oHOxVfUPojzcj0OrJIwVsuk6zQ_hYKBb7lik9qvhfMwn8yg2k5TSqc-0hMb_tEcKkOpuSuvU"/>
+<div class="absolute inset-0 bg-black/5"></div>
+</div>
+<div class="mt-3 handwritten text-sm text-center text-ink-black/60">Vestvågøy Scans</div>
+</div>
+<!-- Meta -->
+<div class="flex-grow pt-4">
+<div class="grid grid-cols-2 gap-y-4">
+<div>
+<p class="font-data-mono text-label-caps opacity-40">CAPACITY</p>
+<p class="font-data-mono text-sm font-bold">48 ENTRIES</p>
+</div>
+<div>
+<p class="font-data-mono text-label-caps opacity-40">FILM STOCK</p>
+<p class="font-data-mono text-sm font-bold">TRI-X 400</p>
+</div>
+<div class="col-span-2">
+<p class="font-data-mono text-label-caps opacity-40 mb-2">NOTES</p>
+<p class="font-body-lg text-sm text-on-surface-variant italic leading-relaxed">Exposure pushed +2 stops for shadow detail. Meticulously logged technical metadata for every frame during the polar night expedition.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Washi Tape -->
+<div class="absolute top-2 right-8 w-20 h-6 bg-washi-tape rotate-[3deg] opacity-60 z-30"></div>
+</div>
+</div>
+<!-- Folder 2 -->
+<div class="folder-transition relative group z-20">
+<!-- Tab -->
+<div class="flex">
+<div class="manila-gradient w-48 h-10 rounded-t-lg border-t border-x border-black/10 flex items-center px-4 ml-12">
+<span class="handwritten text-xl text-ink-black/80">Tokyo Street Scans</span>
+</div>
+</div>
+<!-- Body -->
+<div class="manila-gradient w-full min-h-[220px] rounded-r-lg rounded-bl-lg p-6 border border-black/10 folder-shadow relative overflow-hidden">
+<div class="flex gap-6 items-start relative z-20">
+<!-- Polaroid -->
+<div class="bg-white p-3 polaroid-shadow rotate-1 border border-black/5 flex-shrink-0">
+<div class="w-32 h-32 bg-surface-dim overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="A gritty street photograph taken in Shinjuku at night. The scene captures the neon lights of Tokyo reflected in a puddle on the pavement. The photo is high contrast with deep blacks and bright white highlights, shot on high-speed black and white film with visible halation around the light sources. Professional archival aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_aQrxjjOB2vHpQfRSLKLAF0fiiG0n7dgumuiSB_94sZ4vgWurRSwuElVLM73dvoqEJC3xVJ5zkgSlwjDR--8HqYCJ4QPl7kFedNno91VmfTGo-otTauWzLjI1HOA7cGQ4iOWER3VGIQNU4UH8rPIX7dSO89OStI13Dus89bjSE-l67NDA7y-m7TD2xTRhBE8dyiWJy_totSE-pObMgwWI5Yl8jmut8cRWOtfwt1DCj0U0O5LS2tR2aymjLvZK7B8jXze9pNdXpRU"/>
+<div class="absolute inset-0 bg-black/5"></div>
+</div>
+<div class="mt-3 handwritten text-sm text-center text-ink-black/60">Shinjuku Night</div>
+</div>
+<!-- Meta -->
+<div class="flex-grow pt-4">
+<div class="grid grid-cols-2 gap-y-4">
+<div>
+<p class="font-data-mono text-label-caps opacity-40">CAPACITY</p>
+<p class="font-data-mono text-sm font-bold">112 ENTRIES</p>
+</div>
+<div>
+<p class="font-data-mono text-label-caps opacity-40">FILM STOCK</p>
+<p class="font-data-mono text-sm font-bold">HP5 PLUS / 35MM</p>
+</div>
+<div class="col-span-2">
+<p class="font-data-mono text-label-caps opacity-40 mb-2">NOTES</p>
+<p class="font-body-lg text-sm text-on-surface-variant italic leading-relaxed">Candid street photography across Shinjuku and Shibuya. Mostly wide-angle lenses, focused on architectural geometry and human motion.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Folder 3 -->
+<div class="folder-transition relative group z-10">
+<!-- Tab -->
+<div class="flex">
+<div class="manila-gradient w-48 h-10 rounded-t-lg border-t border-x border-black/10 flex items-center px-4 ml-24">
+<span class="handwritten text-xl text-ink-black/80">Iceland Expedition</span>
+</div>
+</div>
+<!-- Body -->
+<div class="manila-gradient w-full min-h-[220px] rounded-r-lg rounded-bl-lg p-6 border border-black/10 folder-shadow relative overflow-hidden">
+<div class="flex gap-6 items-start relative z-20">
+<!-- Polaroid -->
+<div class="bg-white p-3 polaroid-shadow -rotate-3 border border-black/5 flex-shrink-0">
+<div class="w-32 h-32 bg-surface-dim overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="A wide-angle landscape shot of an Icelandic waterfall, the water captured with a long exposure creating a silky white veil against dark basaltic rocks. The atmosphere is misty and moody, rendered in beautiful silver tones. The composition follows the golden ratio, emphasizing the raw power of nature in a minimalist, archival style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDV1jBVM2KJLmL-LqwlkrXnp_v_k7h9fyOGl2MgZuHu6a0_moGjtS0PVL82kxTpEMNi7abPpg8HbHKkPoxJwZIpmt20yjpUcOOnZgMt1dyTVXjW01FOusj6zUyFeWjeORw9AoeSU5rISA4T4hQNeDh5nhN26hP-Xz3FkDVMtc0aGHt_ViYKz0oXuONmrLt5DgL5YLXnwZGmrD15xIBvUtz3jpSucOuHrIC3zLP44EdrP82IHbzXARYoQEq3FaS6w7fgdIyIKpmcgng"/>
+<div class="absolute inset-0 bg-black/5"></div>
+</div>
+<div class="mt-3 handwritten text-sm text-center text-ink-black/60">Skógafoss Study</div>
+</div>
+<!-- Meta -->
+<div class="flex-grow pt-4">
+<div class="grid grid-cols-2 gap-y-4">
+<div>
+<p class="font-data-mono text-label-caps opacity-40">CAPACITY</p>
+<p class="font-data-mono text-sm font-bold">76 ENTRIES</p>
+</div>
+<div>
+<p class="font-data-mono text-label-caps opacity-40">FORMAT</p>
+<p class="font-data-mono text-sm font-bold">120 MEDIUM FORMAT</p>
+</div>
+<div class="col-span-2">
+<p class="font-data-mono text-label-caps opacity-40 mb-2">NOTES</p>
+<p class="font-body-lg text-sm text-on-surface-variant italic leading-relaxed">Focus on tonal ranges of basalt and water. Using Hasselblad 500C/M. Technical precision prioritized over volume.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Washi Tape -->
+<div class="absolute bottom-4 right-4 w-16 h-5 bg-washi-tape -rotate-[15deg] opacity-40 z-30"></div>
+</div>
+</div>
+<!-- Folder 4 (Empty/Placeholder) -->
+<div class="folder-transition relative group z-0">
+<!-- Tab -->
+<div class="flex">
+<div class="manila-gradient w-48 h-10 rounded-t-lg border-t border-x border-black/10 flex items-center px-4 ml-4">
+<span class="handwritten text-xl text-ink-black/40">Untitled Project...</span>
+</div>
+</div>
+<!-- Body -->
+<div class="manila-gradient w-full h-[120px] rounded-r-lg rounded-bl-lg p-6 border border-black/10 folder-shadow relative overflow-hidden flex items-center justify-center border-dashed border-2 opacity-50">
+<button class="flex items-center gap-2 px-6 py-3 border-2 border-primary font-data-mono text-sm uppercase tracking-widest hover:bg-primary hover:text-white transition-all transform hover:-translate-y-1">
+<span class="material-symbols-outlined">add</span>
+                        Create New Archive
+                    </button>
+</div>
+</div>
+</div>
+<!-- Technical Stats Footer -->
+<section class="mt-20 border-t-2 border-primary pt-8">
+<div class="grid grid-cols-3 gap-8">
+<div class="pencil-line pb-2">
+<p class="font-data-mono text-label-caps opacity-60">TOTAL FILMS</p>
+<p class="font-data-mono text-2xl font-extrabold">246</p>
+</div>
+<div class="pencil-line pb-2">
+<p class="font-data-mono text-label-caps opacity-60">STORAGE UTILIZED</p>
+<p class="font-data-mono text-2xl font-extrabold">84%</p>
+</div>
+<div class="pencil-line pb-2">
+<p class="font-data-mono text-label-caps opacity-60">CATALOG STATUS</p>
+<p class="font-data-mono text-2xl font-extrabold text-error">INDEXED</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[768px] flex justify-around items-end pb-safe bg-warm-surface border-t-2 border-primary z-50">
+<!-- Archive (Active) -->
+<a class="flex flex-col items-center justify-center border-t-4 border-primary pt-1 text-primary w-1/4 pb-4" href="#">
+<span class="material-symbols-outlined">auto_stories</span>
+<span class="font-data-mono text-label-caps mt-1">Archive</span>
+</a>
+<!-- Map -->
+<a class="flex flex-col items-center justify-center pt-2 text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity w-1/4 pb-4 scale-95 transition-transform active:scale-90" href="#">
+<span class="material-symbols-outlined">map</span>
+<span class="font-data-mono text-label-caps mt-1">Map</span>
+</a>
+<!-- Tags -->
+<a class="flex flex-col items-center justify-center pt-2 text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity w-1/4 pb-4 scale-95 transition-transform active:scale-90" href="#">
+<span class="material-symbols-outlined">sell</span>
+<span class="font-data-mono text-label-caps mt-1">Tags</span>
+</a>
+<!-- Index -->
+<a class="flex flex-col items-center justify-center pt-2 text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity w-1/4 pb-4 scale-95 transition-transform active:scale-90" href="#">
+<span class="material-symbols-outlined">format_list_bulleted</span>
+<span class="font-data-mono text-label-caps mt-1">Index</span>
+</a>
+</nav>
+<script>
+        // Micro-interaction: Folders lift slightly when scrolling past
+        window.addEventListener('scroll', () => {
+            const folders = document.querySelectorAll('.folder-transition');
+            folders.forEach((folder, index) => {
+                const rect = folder.getBoundingClientRect();
+                const scrollProgress = (window.innerHeight - rect.top) / window.innerHeight;
+                if (scrollProgress > 0 && scrollProgress < 1.2) {
+                    // Subtle dynamic tilt effect
+                    const tilt = (scrollProgress - 0.5) * 4;
+                    folder.style.transform = `translateY(${Math.sin(scrollProgress * Math.PI) * -8}px)`;
+                }
+            });
+        });
+
+        // Theme sync or other interactions could go here
+    </script>
+</body></html>

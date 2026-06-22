@@ -40,7 +40,7 @@ enum FpsOption {
 
 class ExposureCalculator {
   // Calibration constant for flat sensor (incident light)
-  static const double calibrationConstant = 250.0;
+  static const double calibrationConstant = 230.0;
 
   static const List<int> isoValues = [
     50, 100, 160, 200, 320, 400, 640, 800, 1250, 1600, 3200, 6400, 12800
@@ -70,9 +70,9 @@ class ExposureCalculator {
   static String formatShutterSpeed(double value) {
     if (value >= 1.0) {
       if (value == value.roundToDouble()) {
-        return '${value.toInt()}s';
+        return '${value.toInt()}';
       }
-      return '${value.toStringAsFixed(1)}s';
+      return value.toStringAsFixed(1);
     }
     // Handle small precision issues
     double denominator = 1 / value;

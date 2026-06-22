@@ -129,11 +129,14 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   Color _primaryColor = const Color(0xFFFFB300); // Default Amber
   Color get primaryColor => (_useDynamicColor && _dynamicAccent != null) ? _dynamicAccent! : _primaryColor;
 
+  Color _lcdColor = const Color(0xFF8EFF71); // Default LCD green
+  Color get lcdColor => _lcdColor;
+
   bool _hideStatusBar = false;
   bool get hideStatusBar => _hideStatusBar;
 
-  bool _enableBlur = true;
-  bool get enableBlur => _enableBlur;
+  bool _enableBlur = false;
+  bool get enableBlur => false;
 
   void setThemeMode(ThemeMode mode) {
     if (_themeMode != mode) {
@@ -257,6 +260,13 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void setLcdColor(Color color) {
+    _lcdColor = color;
+    _prefs.setInt('lcdColor', color.toARGB32());
+    _triggerHaptic();
+    notifyListeners();
+  }
+
   void setCalibrationFactor(double factor) {
     _calibrationFactor = factor.clamp(0.1, 5.0);
     _prefs.setDouble('calibrationFactor', _calibrationFactor);
@@ -333,6 +343,9 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
 
     int colorValue = _prefs.getInt('primaryColor') ?? const Color(0xFFFFB300).toARGB32();
     _primaryColor = Color(colorValue);
+
+    int lcdColorValue = _prefs.getInt('lcdColor') ?? const Color(0xFF8EFF71).toARGB32();
+    _lcdColor = Color(lcdColorValue);
 
     _calibrationFactor = _prefs.getDouble('calibrationFactor') ?? 1.0;
     _exposureCompensation = _prefs.getDouble('exposureCompensation') ?? 0.0;

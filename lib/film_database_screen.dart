@@ -29,6 +29,11 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
+    _entranceController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (mounted) setState(() {});
+      }
+    });
     // Delay staggered animation to allow modal sheet to open smoothly first
     Future.delayed(const Duration(milliseconds: 350), () {
       if (mounted) _entranceController.forward();
@@ -44,11 +49,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<ExposureState>();
-    final primaryColor = state.primaryColor;
-    final isDark = state.themeMode == ThemeMode.system
+    final themeMode = context.select<ExposureState, ThemeMode>((s) => s.themeMode);
+    final primaryColor = context.select<ExposureState, Color>((s) => s.primaryColor);
+    final state = context.read<ExposureState>();
+
+    final isDark = themeMode == ThemeMode.system
         ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
-        : state.themeMode == ThemeMode.dark;
+        : themeMode == ThemeMode.dark;
     final backgroundColor =
         isDark ? const Color(0xFF0E0E0E) : Colors.white;
     final surfaceHigh =
@@ -78,42 +85,30 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
       sortedFilms.addAll(groupedStocks[brand]!);
     }
 
+    final double statusBarHeight = MediaQuery.paddingOf(context).top;
+    final double headerHeight = 64.0 + statusBarHeight;
+
     return Container(
       color: backgroundColor,
       child: CustomScrollView(
         controller: widget.scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // 1. Drag Handle (Now part of the Scrollable area -> Draggable!)
-          SliverToBoxAdapter(
-            child: Center(
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-
-          // 2. Pinned Header with Backdrop Blur
+          // 1. Pinned Header with Status Bar padding
           SliverPersistentHeader(
             pinned: true,
             delegate: _SliverAppBarDelegate(
-              minHeight: 64,
-              maxHeight: 64,
+              minHeight: headerHeight,
+              maxHeight: headerHeight,
               child: RepaintBoundary(
-                child: _buildTopBar(context, state, primaryColor, isDark, surfaceHigh),
+                child: _buildTopBar(context, state, primaryColor, isDark, surfaceHigh, statusBarHeight),
               ),
             ),
           ),
 
-          // 3. Scrollable Content
+          // 3. Scrollable Content (Header, Search, Filters)
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 // Currently Loaded Banner
@@ -145,14 +140,39 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // Film Shelf
-                sortedFilms.isEmpty
-                    ? _buildEmptyState(primaryColor)
-                    : _buildShelf(context, groupedStocks, sortedBrands, state, primaryColor, isDark),
               ]),
             ),
           ),
+
+          // 4. Shelf Rows (Lazily Built using Builder Delegate)
+          if (sortedFilms.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+                child: _buildEmptyState(primaryColor),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final brand = sortedBrands[index];
+                    final films = groupedStocks[brand]!;
+                    return _buildShelfRow(
+                      context,
+                      brand,
+                      films,
+                      state,
+                      primaryColor,
+                      isDark,
+                    );
+                  },
+                  childCount: sortedBrands.length,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -164,15 +184,9 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
     Color primaryColor,
     bool isDark,
     Color surfaceHigh,
+    double statusBarHeight,
   ) {
-    return ClipRect(
-      child: state.enableBlur
-          ? BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: _buildTopBarContent(context, state, isDark, surfaceHigh),
-            )
-          : _buildTopBarContent(context, state, isDark, surfaceHigh),
-    );
+    return _buildTopBarContent(context, state, isDark, surfaceHigh, statusBarHeight);
   }
 
   Widget _buildTopBarContent(
@@ -180,13 +194,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
     ExposureState state,
     bool isDark,
     Color surfaceHigh,
+    double statusBarHeight,
   ) {
     return Container(
-          height: 64,
-          padding: EdgeInsets.zero,
+          height: 64.0 + statusBarHeight,
+          padding: EdgeInsets.only(top: statusBarHeight),
           decoration: BoxDecoration(
-            color: (isDark ? const Color(0xFF1F2020) : surfaceHigh)
-                .withValues(alpha: state.enableBlur ? 0.82 : 1.0),
+            color: isDark ? const Color(0xFF1F2020) : surfaceHigh,
             image: skeuomorphicNoise,
             border: Border(
               bottom: BorderSide(
@@ -618,33 +632,6 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
 
   // ─── Shelf Layout ───────────────────────────────────────────────────────────
 
-  Widget _buildShelf(
-    BuildContext context,
-    Map<String, List<FilmStock>> grouped,
-    List<String> brands,
-    ExposureState state,
-    Color primaryColor,
-    bool isDark,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: brands.map((brand) {
-        final films = grouped[brand]!;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 0),
-          child: _buildShelfRow(
-            context,
-            brand,
-            films,
-            state,
-            primaryColor,
-            isDark,
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   Widget _buildShelfRow(
     BuildContext context,
     String brand,
@@ -675,28 +662,28 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
           clipBehavior: Clip.none,
           children: [
             // Wooden shelf back wall (full area)
-            Container(
-              height: 210,
-              decoration: BoxDecoration(
-                image: skeuomorphicNoise,
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFB5742B),
-                    Color(0xFF9A5F1F),
+            RepaintBoundary(
+              child: Container(
+                height: 210,
+                decoration: BoxDecoration(
+                  image: skeuomorphicNoise,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFB5742B),
+                      Color(0xFF9A5F1F),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      offset: const Offset(0, 4),
+                      blurRadius: 0,
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    offset: const Offset(0, 6),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: RepaintBoundary(
                 child: CustomPaint(
                   painter: _WoodGrainPainter(),
                   child: Container(),
@@ -711,6 +698,16 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
                 itemCount: films.length,
                 itemBuilder: (context, index) {
+                  final film = films[index];
+                  final spine = Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _buildFilmSpine(context, film, state, primaryColor, isDark),
+                  );
+
+                  if (_entranceController.value == 1.0) {
+                    return spine;
+                  }
+
                   // Reduced stagger for better performance while keeping the effect
                   final Animation<double> spineAnim = CurvedAnimation(
                     parent: _entranceController,
@@ -730,10 +727,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                           end: Offset.zero,
                         ),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _buildFilmSpine(context, films[index], state, primaryColor, isDark),
-                      ),
+                      child: spine,
                     ),
                   );
                 },
@@ -744,28 +738,30 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
               bottom: 0,
               left: 0,
               right: 0,
-              child: Container(
-                height: 18,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(6),
-                    bottomRight: Radius.circular(6),
-                  ),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFF7A4210),
-                      Color(0xFF5C2F08),
+              child: RepaintBoundary(
+                child: Container(
+                  height: 18,
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(6),
+                      bottomRight: Radius.circular(6),
+                    ),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFF7A4210),
+                        Color(0xFF5C2F08),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        offset: const Offset(0, 3),
+                        blurRadius: 0,
+                      ),
                     ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      offset: const Offset(0, 4),
-                      blurRadius: 6,
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -835,13 +831,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
             if (isSelected)
               BoxShadow(
                 color: primaryColor.withValues(alpha: 0.7),
-                blurRadius: 12,
+                blurRadius: 0,
                 spreadRadius: 1,
               ),
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.4),
               offset: const Offset(2, 3),
-              blurRadius: 4,
+              blurRadius: 0,
             ),
           ],
         ),
@@ -918,7 +914,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                           boxShadow: [
                             BoxShadow(
                               color: primaryColor.withValues(alpha: 0.8),
-                              blurRadius: 8,
+                              blurRadius: 0,
                             ),
                           ],
                         ),
@@ -989,7 +985,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                 onTap: () => Navigator.pop(ctx),
                 child: state.enableBlur
                     ? BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                         child: Container(color: Colors.black.withValues(alpha: 0.35)),
                       )
                     : Container(color: Colors.black.withValues(alpha: 0.9)),
@@ -1006,8 +1002,8 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                       boxShadow: [
                         BoxShadow(
                           color: primaryColor.withValues(alpha: 0.5),
-                          blurRadius: 20,
-                          spreadRadius: 2,
+                          blurRadius: 4,
+                          spreadRadius: 1,
                         ),
                       ],
                     ),
@@ -1058,13 +1054,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                         boxShadow: [
                           BoxShadow(
                             color: spineColor.withValues(alpha: 0.45),
-                            blurRadius: 28,
+                            blurRadius: 6,
                             spreadRadius: 1,
                           ),
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
+                            blurRadius: 4,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
@@ -1084,7 +1080,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                                   boxShadow: [
                                     BoxShadow(
                                       color: spineColor.withValues(alpha: 0.6),
-                                      blurRadius: 10,
+                                      blurRadius: 2,
                                     ),
                                   ],
                                 ),
@@ -1239,7 +1235,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                   onTap: () => Navigator.pop(ctx),
                   child: state.enableBlur
                       ? BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
                           child: Container(color: Colors.black.withValues(alpha: 0.4)),
                         )
                       : Container(color: Colors.black.withValues(alpha: 0.85)),
@@ -1264,13 +1260,13 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                       boxShadow: [
                         BoxShadow(
                           color: spineColor.withValues(alpha: 0.3),
-                          blurRadius: 30,
-                          spreadRadius: 2,
+                          blurRadius: 8,
+                          spreadRadius: 1,
                         ),
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          blurRadius: 6,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -1289,7 +1285,7 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                                 boxShadow: [
                                   BoxShadow(
                                     color: spineColor.withValues(alpha: 0.5),
-                                    blurRadius: 12,
+                                    blurRadius: 4,
                                   ),
                                 ],
                               ),
@@ -1713,13 +1709,13 @@ class _WoodGrainPainter extends CustomPainter {
       const Color(0xFFBE7520),
       const Color(0xFFCF8030),
     ];
-    for (int i = 0; i < 20; i++) {
-      paint.color = grains[i % grains.length].withValues(alpha: 0.2);
-      final y = (size.height / 20) * i;
+    for (int i = 0; i < 12; i++) {
+      paint.color = grains[i % grains.length].withValues(alpha: 0.15);
+      final y = (size.height / 12) * i;
       final path = Path();
       path.moveTo(0, y);
-      for (double x = 0; x < size.width; x += 30) {
-        path.cubicTo(x + 10, y - 3, x + 20, y + 3, x + 30, y);
+      for (double x = 0; x < size.width; x += 80) {
+        path.cubicTo(x + 25, y - 4, x + 55, y + 4, x + 80, y);
       }
       canvas.drawPath(path, paint);
     }

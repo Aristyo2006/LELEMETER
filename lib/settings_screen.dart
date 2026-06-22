@@ -306,6 +306,21 @@ class SettingsScreen extends StatelessWidget {
             color: isDark ? Colors.black : Colors.grey.withValues(alpha: 0.1),
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           ),
+          _buildActionRow(
+            icon: Icons.display_settings,
+            title: 'Viewfinder LCD Color',
+            subtitle: 'Default: Green',
+            iconColor: state.lcdColor,
+            isDark: isDark,
+            onTap: () {
+              _showLcdColorPicker(context, state);
+            },
+          ),
+          Container(
+            height: 1,
+            color: isDark ? Colors.black : Colors.grey.withValues(alpha: 0.1),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          ),
           _buildToggleRow(
             icon: Icons.color_lens_outlined,
             title: 'Use System Accent (Monet)',
@@ -315,22 +330,6 @@ class SettingsScreen extends StatelessWidget {
             isDark: isDark,
             onToggle: () {
               state.toggleUseDynamicColor();
-            },
-          ),
-          Container(
-            height: 1,
-            color: isDark ? Colors.black : Colors.grey.withValues(alpha: 0.1),
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          ),
-          _buildToggleRow(
-            icon: Icons.blur_on,
-            title: 'Glassmorphism (Blur Effects)',
-            subtitle: 'Toggle backdrop blur',
-            isActive: state.enableBlur,
-            activeColor: state.primaryColor,
-            isDark: isDark,
-            onToggle: () {
-              state.toggleBlur();
             },
           ),
         ],
@@ -939,6 +938,70 @@ class SettingsScreen extends StatelessWidget {
               Navigator.pop(context);
             },
             child: Text('SELECT', style: TextStyle(color: state.primaryColor)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLcdColorPicker(BuildContext context, ExposureState state) {
+    Color pickerColor = state.lcdColor;
+    final isDark = state.themeMode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : state.themeMode == ThemeMode.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
+        title: Text(
+          'VIEWFINDER LCD COLOR',
+          style: TextStyle(fontFamily: 'SpaceGrotesk',
+            color: isDark ? Colors.white : Colors.black,
+            fontWeight: FontWeight.bold, fontSize: 14,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Preset swatches
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final c in [
+                const Color(0xFF8EFF71), const Color(0xFF00FF00), const Color(0xFF00FFFF),
+                const Color(0xFFFBBC00), const Color(0xFFFF6B6B), const Color(0xFFFFFFFF),
+              ])
+                GestureDetector(
+                  onTap: () => pickerColor = c,
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: c, shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white24, width: 2),
+                      boxShadow: [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8)],
+                    ),
+                  ),
+                ),
+            ]),
+            const SizedBox(height: 16),
+            ColorPicker(
+              pickerColor: pickerColor,
+              onColorChanged: (color) => pickerColor = color,
+              pickerAreaHeightPercent: 0.7,
+              enableAlpha: false,
+              displayThumbColor: true,
+              labelTypes: const [],
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              state.setLcdColor(pickerColor);
+              Navigator.pop(ctx);
+            },
+            child: Text('SELECT', style: TextStyle(color: state.lcdColor)),
           ),
         ],
       ),

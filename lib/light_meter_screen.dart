@@ -8,6 +8,7 @@ import 'exposure_calculator.dart';
 import 'film_database_screen.dart';
 import 'package:flutter/services.dart';
 import 'settings_screen.dart';
+import 'logbook/logbook_cover_screen.dart';
 import 'ui_helpers.dart';
 import 'camera_viewfinder_screen.dart';
 
@@ -198,10 +199,12 @@ class LightMeterScreen extends StatelessWidget {
 
     return Text(
       label,
-      style: TextStyle(fontFamily: 'VT323', 
+      style: TextStyle(fontFamily: 'DSEG14Classic', 
         fontSize: 14,
         color: color,
         letterSpacing: 0.5,
+        fontWeight: FontWeight.bold,
+        fontStyle: FontStyle.italic,
       ),
     );
   }
@@ -260,7 +263,7 @@ class LightMeterScreen extends StatelessWidget {
                   children: [
                     Text(
                       'ISO :  ${state.iso}',
-                      style: TextStyle(fontFamily: 'VT323', fontSize: 14, color: lcdInk),
+                      style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 12, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
                     ),
                     Row(
                       children: [
@@ -286,15 +289,17 @@ class LightMeterScreen extends StatelessWidget {
                       children: [
                         Text(
                           'T',
-                          style: TextStyle(fontFamily: 'VT323', fontSize: 16, color: lcdInk),
+                          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 14, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
                         ),
                         Text(
                           ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
-                          style: TextStyle(fontFamily: 'VT323', 
-                            fontSize: 56,
+                          style: TextStyle(fontFamily: 'DSEG14Classic', 
+                            fontSize: 48,
                             height: 0.9,
                             color: lcdInk,
                             letterSpacing: -2,
+                            fontWeight: FontWeight.bold,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
@@ -312,17 +317,19 @@ class LightMeterScreen extends StatelessWidget {
                       children: [
                         Text(
                           'F',
-                          style: TextStyle(fontFamily: 'VT323', fontSize: 16, color: lcdInk),
+                          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 14, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
                         ),
                         Text(
                           ExposureCalculator.formatAperture(
                             state.aperture,
                           ).replaceAll('f/', ''),
-                          style: TextStyle(fontFamily: 'VT323', 
-                            fontSize: 56,
+                          style: TextStyle(fontFamily: 'DSEG14Classic', 
+                            fontSize: 48,
                             height: 0.9,
                             color: lcdInk,
                             letterSpacing: -2,
+                            fontWeight: FontWeight.bold,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
@@ -394,11 +401,11 @@ class LightMeterScreen extends StatelessWidget {
       children: [
         Text(
           label.toUpperCase(),
-          style: TextStyle(fontFamily: 'VT323', fontSize: 10, color: lcdInk),
+          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 9, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
         ),
         Text(
           value.toUpperCase(),
-          style: TextStyle(fontFamily: 'VT323', fontSize: 22, color: lcdInk),
+          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 18, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -463,23 +470,29 @@ class LightMeterScreen extends StatelessWidget {
           children: [
             Text(
               '-3',
-              style: TextStyle(fontFamily: 'VT323', 
+              style: TextStyle(fontFamily: 'DSEG14Classic', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
+                fontWeight: FontWeight.bold,
+                fontStyle: FontStyle.italic,
               ),
             ),
             Text(
               '0',
-              style: TextStyle(fontFamily: 'VT323', 
+              style: TextStyle(fontFamily: 'DSEG14Classic', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
+                fontWeight: FontWeight.bold,
+                fontStyle: FontStyle.italic,
               ),
             ),
             Text(
               '+3',
-              style: TextStyle(fontFamily: 'VT323', 
+              style: TextStyle(fontFamily: 'DSEG14Classic', 
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
+                fontWeight: FontWeight.bold,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ],
@@ -1133,25 +1146,11 @@ class LightMeterScreen extends StatelessWidget {
     return InkWell(
       onTap: () {
         HapticFeedback.mediumImpact();
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true, // Respect status bar!
-          backgroundColor: Colors.transparent,
-          barrierColor: Colors.black.withValues(alpha: 0.72),
-          builder: (context) => DraggableScrollableSheet(
-            initialChildSize: 0.42,
-            minChildSize: 0.25,
-            maxChildSize: 1.0,
-            snap: true,
-            snapSizes: const [0.42, 1.0],
-            expand: false,
-            builder: (context, scrollController) => ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-              child: Container(
-                color: isDark ? const Color(0xFF131313) : Colors.white,
-                child: FilmDatabaseScreen(scrollController: scrollController),
-              ),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const Scaffold(
+              body: FilmDatabaseScreen(),
             ),
           ),
         );
@@ -1319,21 +1318,8 @@ class LightMeterScreen extends StatelessWidget {
                 HapticFeedback.lightImpact();
                 Navigator.push(
                   context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const SettingsScreen(),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                      const begin = Offset(0, 1);
-                      const end = Offset.zero;
-                      const curve = Curves.easeOutQuint;
-                      var tween = Tween(begin: begin, end: end)
-                          .chain(CurveTween(curve: curve));
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
                   ),
                 );
               },
@@ -1355,6 +1341,58 @@ class LightMeterScreen extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'SETTINGS',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? const Color(0xFF757575) : Colors.black45,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // ── LOG (Logbook) button ──
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        const LogbookCoverScreen(),
+                    transitionDuration: const Duration(milliseconds: 300),
+                    reverseTransitionDuration: const Duration(milliseconds: 300),
+                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      );
+                    },
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: isDark ? null : Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.menu_book_outlined,
+                      color: isDark ? const Color(0xFF757575) : Colors.black45,
+                      size: 24,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'LOG',
                       style: TextStyle(
                         fontFamily: 'SpaceGrotesk',
                         fontSize: 10,
