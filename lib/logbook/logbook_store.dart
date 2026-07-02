@@ -34,17 +34,17 @@ class LogbookStore {
     if (_loaded) return;
     final docs = await getApplicationDocumentsDirectory();
     _imageDir = Directory(p.join(docs.path, 'logbook_images'));
-    if (!_imageDir!.existsSync()) _imageDir!.createSync(recursive: true);
+    if (!_imageDir!.existsSync()) await _imageDir!.create(recursive: true);
     _metaFile = File(p.join(docs.path, 'logbook.json'));
-    _load();
+    await _load();
     _loaded = true;
   }
 
-  void _load() {
+  Future<void> _load() async {
     final f = _metaFile;
     if (f == null || !f.existsSync()) return;
     try {
-      final raw = f.readAsStringSync();
+      final raw = await f.readAsString();
       final parsed = jsonDecode(raw);
       _entries.clear();
       _folders.clear();
@@ -144,6 +144,7 @@ class LogbookStore {
     required double ev,
     required double exposureCompensation,
     String? filmName,
+    int? focalLength,
     String title = '',
     String note = '',
     double? latitude,
@@ -162,6 +163,7 @@ class LogbookStore {
       ev: ev,
       exposureCompensation: exposureCompensation,
       filmName: filmName,
+      focalLength: focalLength,
       title: title,
       note: note,
       latitude: latitude,

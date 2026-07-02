@@ -1,10 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-
+import '../exposure_state.dart';
 import '../film_database.dart';
 import 'film_sim_bake.dart';
 import 'logbook_screen.dart';
@@ -20,6 +19,7 @@ class ExposureSnapshot {
   final double ev;
   final double exposureCompensation;
   final String? filmName;
+  final int? focalLength;
 
   const ExposureSnapshot({
     required this.shutterSpeed,
@@ -28,6 +28,7 @@ class ExposureSnapshot {
     required this.ev,
     required this.exposureCompensation,
     this.filmName,
+    this.focalLength,
   });
 }
 
@@ -92,7 +93,7 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
 
   Future<void> _toggleLocation(bool? value) async {
     if (value == null) return;
-    HapticFeedback.lightImpact();
+    ExposureState.hapticLight();
     if (!value) {
       setState(() {
         _addLocation = false;
@@ -162,7 +163,7 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
-    HapticFeedback.mediumImpact();
+    ExposureState.hapticMedium();
 
     try {
       String imagePath = widget.imagePath;
@@ -188,6 +189,7 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
         ev: widget.snapshot.ev,
         exposureCompensation: widget.snapshot.exposureCompensation,
         filmName: widget.snapshot.filmName,
+        focalLength: widget.snapshot.focalLength,
         title: _titleCtrl.text.trim(),
         note: _noteCtrl.text.trim(),
         latitude: _lat,

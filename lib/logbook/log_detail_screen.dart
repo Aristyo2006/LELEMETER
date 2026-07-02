@@ -1,17 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
+import 'package:animations/animations.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../exposure_state.dart';
 import 'log_entry.dart';
 import 'logbook_store.dart';
 import 'logbook_theme.dart';
 
 class LogDetailScreen extends StatefulWidget {
   final LogEntry entry;
-  const LogDetailScreen({super.key, required this.entry});
+  final bool startInEditMode;
+  const LogDetailScreen({super.key, required this.entry, this.startInEditMode = false});
 
   @override
   State<LogDetailScreen> createState() => _LogDetailScreenState();
@@ -22,6 +24,7 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _noteCtrl;
   late final TextEditingController _rollCtrl;
+  late final ScrollController _scrollController;
   bool _editing = false;
   bool _busy = false;
 
@@ -32,6 +35,14 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
     _titleCtrl = TextEditingController(text: _entry.title);
     _noteCtrl = TextEditingController(text: _entry.note);
     _rollCtrl = TextEditingController(text: _entry.roll ?? '');
+    _scrollController = ScrollController();
+    _editing = widget.startInEditMode;
+
+    if (widget.startInEditMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+    }
   }
 
   @override
@@ -39,7 +50,18 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
     _titleCtrl.dispose();
     _noteCtrl.dispose();
     _rollCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   void _toast(String msg) {
@@ -127,6 +149,8 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
     }
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -138,12 +162,15 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
           children: [
             buildBookHeader(
               context,
-              'Entry',
+              _entry.title.trim().isEmpty
+                  ? (_entry.filmName ?? 'Untitled frame')
+                  : _entry.title.trim(),
             ),
             Expanded(
               child: LogbookTheme.paperBackground(
                 isDark: isDark,
                 child: ListView(
+                  controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
                     // Full photo with physical "tipped-in" frame and tape
@@ -152,45 +179,99 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          Transform.rotate(
-                            angle: -0.02, // 1 degree tilt to the left
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(
-                                  color: LogbookTheme.faded(isDark).withValues(alpha: 0.3),
-                                  width: 1,
+                          OpenContainer(
+                            transitionType: ContainerTransitionType.fade,
+                            transitionDuration: const Duration(milliseconds: 600),
+                            closedColor: Colors.transparent,
+                            closedElevation: 0,
+                            openElevation: 0,
+                            middleColor: Colors.transparent,
+                            openColor: Colors.black,
+                            clipBehavior: Clip.none,
+                            openBuilder: (context, action) {
+                              return Scaffold(
+                                backgroundColor: Colors.black,
+                                body: Stack(
+                                  children: [
+                                    InteractiveViewer(
+                                      minScale: 1.0,
+                                      maxScale: 5.0,
+                                      child: SizedBox.expand(
+                                        child: Image.file(
+                                          File(_entry.imagePath),
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 16,
+                                      right: 16,
+                                      child: SafeArea(
+                                        child: GestureDetector(
+                                          onTap: () => Navigator.pop(context),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.black54,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.close, color: Colors.white, size: 24),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
-                                    offset: const Offset(2, 4),
-                                    blurRadius: 10,
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(0),
-                                child: Hero(
-                                  tag: 'entry_image_${_entry.id}',
-                                  child: Image.file(
-                                    File(_entry.imagePath),
-                                    fit: BoxFit.contain,
-                                    gaplessPlayback: true,
-                                    cacheWidth: 1200,
-                                    errorBuilder: (ctx, error, stackTrace) => AspectRatio(
-                                      aspectRatio: 3 / 4,
-                                      child: Container(
-                                        color: Colors.black12,
-                                        child: Icon(Icons.broken_image_outlined,
-                                            size: 56, color: LogbookTheme.faded(isDark)),
+                              );
+                            },
+                            closedBuilder: (context, action) {
+                              return Transform.rotate(
+                                angle: -0.02, // 1 degree tilt to the left
+                                child: GestureDetector(
+                                  onTap: () {
+                                    ExposureState.hapticLight();
+                                    action();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      border: Border.all(
+                                        color: LogbookTheme.faded(isDark).withValues(alpha: 0.3),
+                                        width: 1,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
+                                          offset: const Offset(2, 4),
+                                          blurRadius: 10,
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(0),
+                                      child: Hero(
+                                        tag: 'entry_image_${_entry.id}',
+                                        child: Image.file(
+                                          File(_entry.imagePath),
+                                          fit: BoxFit.contain,
+                                          gaplessPlayback: true,
+                                          cacheWidth: 1200,
+                                          errorBuilder: (ctx, error, stackTrace) => AspectRatio(
+                                            aspectRatio: 3 / 4,
+                                            child: Container(
+                                              color: Colors.black12,
+                                              child: Icon(Icons.broken_image_outlined,
+                                                  size: 56, color: LogbookTheme.faded(isDark)),
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                           // Decorative Washi Tape 1 (Top Left)
                           Positioned(
@@ -479,12 +560,16 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
                             icon: _editing ? Icons.edit_off_outlined : Icons.edit_outlined,
                             label: _editing ? 'Cancel' : 'Edit',
                             onTap: _busy ? null : () {
-                              HapticFeedback.lightImpact();
+                              ExposureState.hapticLight();
                               setState(() => _editing = !_editing);
                               if (!_editing) {
                                 _noteCtrl.text = _entry.note;
                                 _titleCtrl.text = _entry.title;
                                 _rollCtrl.text = _entry.roll ?? '';
+                              } else {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  _scrollToBottom();
+                                });
                               }
                             },
                           ),
@@ -548,7 +633,7 @@ class _LogDetailScreenState extends State<LogDetailScreen> {
       onTap: onTap == null
           ? null
           : () {
-              HapticFeedback.lightImpact();
+              ExposureState.hapticLight();
               onTap();
             },
       child: Container(

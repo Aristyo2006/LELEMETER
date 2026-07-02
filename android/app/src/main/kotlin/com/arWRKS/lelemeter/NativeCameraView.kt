@@ -8,6 +8,7 @@ import android.hardware.camera2.*
 import android.hardware.camera2.params.MeteringRectangle
 import android.media.Image
 import android.media.ImageReader
+import android.media.MediaActionSound
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -73,10 +74,13 @@ class NativeCameraView(
     private val bHist = IntArray(256)
     private var lastHistogramTime = 0L
 
+    private val sound = MediaActionSound()
+
     init {
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(this)
         textureView.surfaceTextureListener = this
+        sound.load(MediaActionSound.SHUTTER_CLICK)
     }
 
     override fun getView(): View = textureView
@@ -168,7 +172,21 @@ class NativeCameraView(
     private fun createCameraPreviewSession() {
         try {
             val texture = textureView.surfaceTexture ?: return
-            texture.setDefaultBufferSize(640, 480)
+
+            val chars = cameraManager.getCameraCharacteristics(cameraId)
+            val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+
+            // Pick a 4:3 preview size from the camera's actual output list.
+            // Using a size from the real list ensures the sensor crop region is
+            // identical to the JPEG capture, eliminating FOV mismatch.
+            val previewSizes = map?.getOutputSizes(SurfaceTexture::class.java)
+            val bestPreviewSize = previewSizes?.filter {
+                val ratio = it.width.toDouble() / it.height.toDouble()
+                Math.abs(ratio - (4.0 / 3.0)) < 0.05 && it.width <= 1280
+            }?.maxByOrNull { it.width * it.height }
+                ?: android.util.Size(640, 480)
+            texture.setDefaultBufferSize(bestPreviewSize.width, bestPreviewSize.height)
+
             val surface = Surface(texture)
 
             imageReader = ImageReader.newInstance(320, 240, ImageFormat.YUV_420_888, 2)
@@ -178,7 +196,38 @@ class NativeCameraView(
                 image.close()
             }, backgroundHandler)
 
-            cameraDevice?.createCaptureSession(Arrays.asList(surface, imageReader?.surface), object : CameraCaptureSession.StateCallback() {
+            // Setup stillImageReader
+            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
+            val target = jpegSizes?.filter {
+                val ratio = it.width.toDouble() / it.height.toDouble()
+                Math.abs(ratio - (4.0 / 3.0)) < 0.05
+            }?.maxByOrNull { it.width * it.height }
+                ?: jpegSizes?.maxByOrNull { it.width * it.height }
+                ?: android.util.Size(1920, 1440)
+            val maxLong = 1920
+            val stillSize = if (maxOf(target.width, target.height) > maxLong) {
+                val scale = maxLong.toDouble() / maxOf(target.width, target.height)
+                android.util.Size(
+                    (target.width * scale).toInt().coerceAtLeast(1),
+                    (target.height * scale).toInt().coerceAtLeast(1),
+                )
+            } else target
+
+            stillImageReader = ImageReader.newInstance(stillSize.width, stillSize.height, ImageFormat.JPEG, 2)
+            stillImageReader?.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
+                try {
+                    val out = writeJpeg(image)
+                    finishCapture(path = out)
+                } catch (e: Exception) {
+                    finishCapture(error = e.message ?: "write_failed")
+                } finally {
+                    image.close()
+                }
+            }, backgroundHandler)
+
+            val surfaces = listOfNotNull(surface, imageReader?.surface, stillImageReader?.surface)
+            cameraDevice?.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
                     updatePreview()
@@ -192,6 +241,7 @@ class NativeCameraView(
         builder.addTarget(Surface(textureView.surfaceTexture))
         imageReader?.surface?.let { builder.addTarget(it) }
 
+        builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
         builder.set(CaptureRequest.CONTROL_AE_LOCK, isAELocked)
         builder.set(CaptureRequest.CONTROL_EFFECT_MODE, if (bwMode) CaptureRequest.CONTROL_EFFECT_MODE_MONO else CaptureRequest.CONTROL_EFFECT_MODE_OFF)
         builder.set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
@@ -275,65 +325,20 @@ class NativeCameraView(
                 return
             }
             captureResultCallback = result
-            captureFlashPosted = false
         }
 
-        // Tear down the live preview session first so we can reconfigure with a JPEG surface.
         val device = cameraDevice
-        if (device == null) {
+        val session = captureSession
+        val reader = stillImageReader
+        if (device == null || session == null || reader == null) {
             finishCapture(error = "camera_not_open")
             return
         }
 
         try {
             val chars = cameraManager.getCameraCharacteristics(cameraId)
-            val jpegSizes = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                ?.getOutputSizes(ImageFormat.JPEG)
-            // Keep still resolution reasonable to avoid huge memory spikes; prefer ~1080p-ish long edge.
-            val target = jpegSizes?.maxByOrNull { it.width * it.height } ?: android.util.Size(1920, 1080)
-            val maxLong = 1920
-            val stillSize = if (maxOf(target.width, target.height) > maxLong) {
-                val scale = maxLong.toDouble() / maxOf(target.width, target.height)
-                android.util.Size(
-                    (target.width * scale).toInt().coerceAtLeast(1),
-                    (target.height * scale).toInt().coerceAtLeast(1),
-                )
-            } else target
-
-            stillImageReader = ImageReader.newInstance(stillSize.width, stillSize.height, ImageFormat.JPEG, 2)
-            stillImageReader?.setOnImageAvailableListener({ reader ->
-                val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
-                try {
-                    val out = writeJpeg(image)
-                    // Always restore preview, then resolve on the platform thread.
-                    textureView.post { teardownStillAndResume() }
-                    finishCapture(path = out)
-                } catch (e: Exception) {
-                    textureView.post { teardownStillAndResume() }
-                    finishCapture(error = e.message ?: "write_failed")
-                } finally {
-                    image.close()
-                }
-            }, backgroundHandler)
-
-            // Build a fresh session that includes ONLY the JPEG surface (still capture),
-            // so the preview SurfaceTexture output is never re-aimed at still settings.
-            device.createCaptureSession(
-                listOfNotNull(stillImageReader?.surface),
-                object : CameraCaptureSession.StateCallback() {
-                    override fun onConfigured(session: CameraCaptureSession) {
-                        stillSession = session
-                        runStillCapture(chars)
-                    }
-                    override fun onConfigureFailed(session: CameraCaptureSession) {
-                        textureView.post { teardownStillAndResume() }
-                        finishCapture(error = "configure_failed")
-                    }
-                },
-                backgroundHandler,
-            )
+            runStillCapture(chars)
         } catch (e: Exception) {
-            textureView.post { teardownStillAndResume() }
             finishCapture(error = e.message ?: "capture_exception")
         }
     }
@@ -343,7 +348,8 @@ class NativeCameraView(
             val builder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             builder.addTarget(stillImageReader!!.surface)
 
-            // Mirror the user's current capture intent (these are reads only — no state mutation).
+            // Explicitly set AE Mode to ON
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             builder.set(CaptureRequest.CONTROL_AE_LOCK, isAELocked)
             builder.set(
                 CaptureRequest.CONTROL_EFFECT_MODE,
@@ -378,9 +384,9 @@ class NativeCameraView(
             }
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
 
-            stillSession?.capture(builder.build(), null, backgroundHandler)
+            captureSession?.capture(builder.build(), null, backgroundHandler)
+            sound.play(MediaActionSound.SHUTTER_CLICK)
         } catch (e: Exception) {
-            textureView.post { teardownStillAndResume() }
             finishCapture(error = e.message ?: "still_capture_failed")
         }
     }
@@ -392,20 +398,6 @@ class NativeCameraView(
         val file = File(appContext.cacheDir, "capture_${System.currentTimeMillis()}.jpg")
         FileOutputStream(file).use { it.write(bytes) }
         return file.absolutePath
-    }
-
-    /** Tear down the still session + reader, then rebuild the live preview session. */
-    private fun teardownStillAndResume() {
-        try {
-            stillSession?.close()
-        } catch (_: Exception) {}
-        stillSession = null
-        try {
-            stillImageReader?.close()
-        } catch (_: Exception) {}
-        stillImageReader = null
-        // Rebuild the original preview/analyzer session exactly as on open.
-        createCameraPreviewSession()
     }
 
     /** Resolve the pending Flutter result exactly once. */

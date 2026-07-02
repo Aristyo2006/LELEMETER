@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:flutter/services.dart';
 import 'exposure_state.dart';
 import 'ui_helpers.dart';
 
@@ -76,7 +75,7 @@ class SettingsScreen extends StatelessWidget {
         children: [
           GestureDetector(
             onTap: () {
-              HapticFeedback.lightImpact();
+              ExposureState.hapticLight();
               Navigator.pop(context);
             },
             child: Container(
@@ -150,7 +149,8 @@ class SettingsScreen extends StatelessWidget {
         ),
         child: Text(
           title.toUpperCase(),
-          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+          style: TextStyle(
+            fontFamily: 'SpaceGrotesk',
             fontSize: 12,
             fontWeight: FontWeight.bold,
             letterSpacing: 2,
@@ -168,7 +168,9 @@ class SettingsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: isDark ? (state.isPureBlack ? Colors.black : const Color(0xFF131313)) : Colors.white,
+        color: isDark
+            ? (state.isPureBlack ? Colors.black : const Color(0xFF131313))
+            : Colors.white,
         image: skeuomorphicNoise,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -236,7 +238,9 @@ class SettingsScreen extends StatelessWidget {
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 300),
-            crossFadeState: isDark ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            crossFadeState: isDark
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
             firstChild: Column(
               children: [
                 _buildToggleRow(
@@ -252,8 +256,13 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 Container(
                   height: 1,
-                  color: isDark ? Colors.black : Colors.grey.withValues(alpha: 0.1),
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  color: isDark
+                      ? Colors.black
+                      : Colors.grey.withValues(alpha: 0.1),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                 ),
               ],
             ),
@@ -332,6 +341,22 @@ class SettingsScreen extends StatelessWidget {
               state.toggleUseDynamicColor();
             },
           ),
+          Container(
+            height: 1,
+            color: isDark ? Colors.black : Colors.grey.withValues(alpha: 0.1),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          ),
+          _buildToggleRow(
+            icon: Icons.vibration,
+            title: 'Haptic Feedback',
+            subtitle: 'Vibrate on interaction',
+            isActive: state.hapticsEnabled,
+            activeColor: state.primaryColor,
+            isDark: isDark,
+            onToggle: () {
+              state.toggleHaptics();
+            },
+          ),
         ],
       ),
     );
@@ -349,7 +374,9 @@ class SettingsScreen extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark ? (state.isPureBlack ? Colors.black : const Color(0xFF131313)) : Colors.white,
+            color: isDark
+                ? (state.isPureBlack ? Colors.black : const Color(0xFF131313))
+                : Colors.white,
             image: skeuomorphicNoise,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
@@ -371,7 +398,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     'CALIBRATION FACTOR',
                     style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.5,
@@ -381,7 +408,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     'x${state.calibrationFactor.toStringAsFixed(2)}',
                     style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: state.primaryColor,
@@ -407,7 +434,7 @@ class SettingsScreen extends StatelessWidget {
                         'Tune sensor sensitivity. Higher value = Brighter exposure reading.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                    fontFamily: 'Inter',
+                          fontFamily: 'Inter',
                           fontSize: 10,
                           color: const Color(0xFF767575),
                         ),
@@ -436,7 +463,7 @@ class SettingsScreen extends StatelessWidget {
                         Text(
                           'HARDWARE STATUS',
                           style: TextStyle(
-                    fontFamily: 'SpaceGrotesk',
+                            fontFamily: 'SpaceGrotesk',
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1,
@@ -448,7 +475,7 @@ class SettingsScreen extends StatelessWidget {
                           Text(
                             state.sensorName!.toUpperCase(),
                             style: TextStyle(
-                    fontFamily: 'SpaceGrotesk',
+                              fontFamily: 'SpaceGrotesk',
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: isDark ? Colors.white70 : Colors.black87,
@@ -463,16 +490,27 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: state.hasSensor ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                      color: state.hasSensor
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: state.hasSensor ? Colors.green.withValues(alpha: 0.3) : Colors.red.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: state.hasSensor
+                            ? Colors.green.withValues(alpha: 0.3)
+                            : Colors.red.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Text(
-                      state.hasSensor ? 'SENSOR DETECTED' : 'SENSOR NOT DETECTED',
+                      state.hasSensor
+                          ? 'SENSOR DETECTED'
+                          : 'SENSOR NOT DETECTED',
                       style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 9,
                         fontWeight: FontWeight.bold,
                         color: state.hasSensor ? Colors.green : Colors.red,
@@ -493,7 +531,10 @@ class SettingsScreen extends StatelessWidget {
                           SnackBar(
                             content: Text(
                               'Sensor calibration reset.',
-                              style: TextStyle(fontFamily: 'SpaceGrotesk', color: Colors.white),
+                              style: TextStyle(
+                                fontFamily: 'SpaceGrotesk',
+                                color: Colors.white,
+                              ),
                             ),
                             backgroundColor: state.primaryColor,
                             duration: const Duration(seconds: 2),
@@ -532,9 +573,13 @@ class SettingsScreen extends StatelessWidget {
                           SnackBar(
                             content: Text(
                               'Reinitializing sensor hardware...',
-                              style: TextStyle(fontFamily: 'SpaceGrotesk', color: Colors.white),
+                              style: TextStyle(
+                                fontFamily: 'SpaceGrotesk',
+                                color: Colors.white,
+                              ),
                             ),
-                            backgroundColor: state.primaryColor, // Use actual current primary
+                            backgroundColor: state
+                                .primaryColor, // Use actual current primary
                             duration: const Duration(seconds: 2),
                           ),
                         );
@@ -589,13 +634,16 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 title: Row(
                   children: [
-                    const Icon(Icons.warning_amber_rounded,
-                        color: Color(0xFFEE7D77), size: 20),
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFEE7D77),
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'RESET DEFAULTS',
                       style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFFEE7D77),
@@ -604,7 +652,7 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
                 content: Text(
-                  'This will wipe ALL settings and restart the app.\n\nYour film selection, calibration, and theme will be lost.',
+                  'This will wipe ALL settings and restart the app.\n\nYour film selection, calibration, theme and all LogBook entries will be lost.',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
@@ -620,7 +668,7 @@ class SettingsScreen extends StatelessWidget {
                     child: Text(
                       'CANCEL',
                       style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: isDark
@@ -637,7 +685,7 @@ class SettingsScreen extends StatelessWidget {
                     child: Text(
                       'RESET & RESTART',
                       style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                        fontFamily: 'SpaceGrotesk',
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFFEE7D77),
@@ -677,7 +725,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     'RESET DEFAULTS',
                     style: TextStyle(
-                  fontFamily: 'SpaceGrotesk',
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.5,
@@ -764,7 +812,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     title,
                     style: TextStyle(
-                    fontFamily: 'Inter',
+                      fontFamily: 'Inter',
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: isDark ? const Color(0xFFE7E5E5) : Colors.black,
@@ -774,7 +822,7 @@ class SettingsScreen extends StatelessWidget {
                     Text(
                       subtitle,
                       style: TextStyle(
-                    fontFamily: 'Inter',
+                        fontFamily: 'Inter',
                         fontSize: 12,
                         color: const Color(0xFFACABAA),
                       ),
@@ -823,7 +871,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     title,
                     style: TextStyle(
-                    fontFamily: 'Inter',
+                      fontFamily: 'Inter',
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: isDark ? const Color(0xFFE7E5E5) : Colors.black,
@@ -832,7 +880,7 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                    fontFamily: 'Inter',
+                      fontFamily: 'Inter',
                       fontSize: 12,
                       color: const Color(0xFFACABAA),
                     ),
@@ -916,7 +964,8 @@ class SettingsScreen extends StatelessWidget {
         backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
         title: Text(
           'CHOOSE THEME COLOR',
-          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+          style: TextStyle(
+            fontFamily: 'SpaceGrotesk',
             color: isDark ? Colors.white : Colors.black,
             fontWeight: FontWeight.bold,
           ),
@@ -955,41 +1004,61 @@ class SettingsScreen extends StatelessWidget {
         backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
         title: Text(
           'VIEWFINDER LCD COLOR',
-          style: TextStyle(fontFamily: 'SpaceGrotesk',
+          style: TextStyle(
+            fontFamily: 'SpaceGrotesk',
             color: isDark ? Colors.white : Colors.black,
-            fontWeight: FontWeight.bold, fontSize: 14,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
           ),
         ),
         content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Preset swatches
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final c in [
-                const Color(0xFF8EFF71), const Color(0xFF00FF00), const Color(0xFF00FFFF),
-                const Color(0xFFFBBC00), const Color(0xFFFF6B6B), const Color(0xFFFFFFFF),
-              ])
-                GestureDetector(
-                  onTap: () => pickerColor = c,
-                  child: Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      color: c, shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white24, width: 2),
-                      boxShadow: [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8)],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Preset swatches
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in [
+                    const Color(0xFF8EFF71),
+                    const Color(0xFF00FF00),
+                    const Color(0xFF00FFFF),
+                    const Color(0xFFFBBC00),
+                    const Color(0xFFFF6B6B),
+                    const Color(0xFFFFFFFF),
+                  ])
+                    GestureDetector(
+                      onTap: () => pickerColor = c,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white24, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: c.withValues(alpha: 0.5),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-            ]),
-            const SizedBox(height: 16),
-            ColorPicker(
-              pickerColor: pickerColor,
-              onColorChanged: (color) => pickerColor = color,
-              pickerAreaHeightPercent: 0.7,
-              enableAlpha: false,
-              displayThumbColor: true,
-              labelTypes: const [],
-            ),
-          ]),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ColorPicker(
+                pickerColor: pickerColor,
+                onColorChanged: (color) => pickerColor = color,
+                pickerAreaHeightPercent: 0.7,
+                enableAlpha: false,
+                displayThumbColor: true,
+                labelTypes: const [],
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1023,7 +1092,7 @@ class SettingsScreen extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.mediumImpact();
+        ExposureState.hapticMedium();
         onTap();
       },
       child: AnimatedContainer(
@@ -1036,8 +1105,8 @@ class SettingsScreen extends StatelessWidget {
             colors: isActive
                 ? [activeColor, activeColor.withValues(alpha: 0.7)]
                 : (isDark
-                    ? [const Color(0xFF333333), const Color(0xFF191A1A)]
-                    : [const Color(0xFFFFFFFF), const Color(0xFFDCDCDC)]),
+                      ? [const Color(0xFF333333), const Color(0xFF191A1A)]
+                      : [const Color(0xFFFFFFFF), const Color(0xFFDCDCDC)]),
           ),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
@@ -1096,18 +1165,23 @@ class SettingsScreen extends StatelessWidget {
               size: 20,
               color: isActive
                   ? Colors.black.withValues(alpha: 0.8)
-                  : (isDark ? const Color(0xFFACABAA) : const Color(0xFF767575)),
+                  : (isDark
+                        ? const Color(0xFFACABAA)
+                        : const Color(0xFF767575)),
             ),
             const SizedBox(height: 4),
             Text(
               label,
-              style: TextStyle(fontFamily: 'SpaceGrotesk', 
+              style: TextStyle(
+                fontFamily: 'SpaceGrotesk',
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1,
                 color: isActive
                     ? Colors.black.withValues(alpha: 0.8)
-                    : (isDark ? const Color(0xFFACABAA) : const Color(0xFF767575)),
+                    : (isDark
+                          ? const Color(0xFFACABAA)
+                          : const Color(0xFF767575)),
               ),
             ),
           ],

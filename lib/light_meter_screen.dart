@@ -6,11 +6,12 @@ import 'package:battery_plus/battery_plus.dart';
 import 'exposure_state.dart';
 import 'exposure_calculator.dart';
 import 'film_database_screen.dart';
-import 'package:flutter/services.dart';
 import 'settings_screen.dart';
 import 'logbook/logbook_cover_screen.dart';
 import 'ui_helpers.dart';
 import 'camera_viewfinder_screen.dart';
+import 'package:page_transition/page_transition.dart';
+
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
@@ -18,10 +19,11 @@ class LightMeterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Top level watch ONLY for theme/global appearance to avoid full rebuilds on sensor data
-    final appearance = context.select<ExposureState, (ThemeMode, bool, Color, bool)>(
-      (s) => (s.themeMode, s.isPureBlack, s.primaryColor, s.enableBlur)
-    );
-    
+    final appearance = context
+        .select<ExposureState, (ThemeMode, bool, Color, bool)>(
+          (s) => (s.themeMode, s.isPureBlack, s.primaryColor, s.enableBlur),
+        );
+
     final isDark = appearance.$1 == ThemeMode.system
         ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
         : appearance.$1 == ThemeMode.dark;
@@ -35,11 +37,9 @@ class LightMeterScreen extends StatelessWidget {
         children: [
           // Background pattern - STATIC REPAINT BOUNDARY
           const Positioned.fill(
-            child: RepaintBoundary(
-              child: _StaticBackground(),
-            ),
+            child: RepaintBoundary(child: _StaticBackground()),
           ),
-          
+
           // Main Scrollable Content
           Column(
             children: [
@@ -53,22 +53,46 @@ class LightMeterScreen extends StatelessWidget {
                   ),
                   child: Column(
                     children: [
-                      Consumer<ExposureState>(builder: (context, s, _) => _buildGlassReadout(context, s)),
+                      Consumer<ExposureState>(
+                        builder: (context, s, _) =>
+                            RepaintBoundary(child: _buildGlassReadout(context, s)),
+                      ),
                       const SizedBox(height: 16),
-                      Consumer<ExposureState>(builder: (context, s, _) => _buildQuickControls(context, s)),
+                      Selector<ExposureState, bool>(
+                        selector: (_, s) => s.isLocked,
+                        builder: (context, isLocked, _) {
+                          final s = context.read<ExposureState>();
+                          return _buildQuickControls(context, isLocked, s);
+                        },
+                      ),
                       const SizedBox(height: 24),
-                      Consumer<ExposureState>(builder: (context, s, _) => _buildMechanicalInterface(context, s)),
+                      Consumer<ExposureState>(
+                        builder: (context, s, _) =>
+                            _buildMechanicalInterface(context, s),
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
           ),
-          
+
           // Fixed Overlays - Wrap expensive blurs in RepaintBoundary if possible
-          Consumer<ExposureState>(builder: (context, s, _) => _buildProHeader(context, s)),
-          Consumer<ExposureState>(builder: (context, s, _) => _buildProBottomNav(context, s)),
-          
+          Selector<ExposureState, (ThemeMode, bool, Color)>(
+            selector: (_, s) => (s.themeMode, s.enableBlur, s.primaryColor),
+            builder: (context, _, _) {
+              final s = context.read<ExposureState>();
+              return _buildProHeader(context, s);
+            },
+          ),
+          Selector<ExposureState, (ThemeMode, bool, Color)>(
+            selector: (_, s) => (s.themeMode, s.enableBlur, s.primaryColor),
+            builder: (context, _, _) {
+              final s = context.read<ExposureState>();
+              return _buildProBottomNav(context, s);
+            },
+          ),
+
           // Sensor Alert if needed
           Consumer<ExposureState>(
             builder: (context, state, _) {
@@ -94,27 +118,33 @@ class LightMeterScreen extends StatelessWidget {
       left: 0,
       right: 0,
       child: ClipRect(
-        child: state.enableBlur 
-          ? BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
-              child: _buildHeaderContent(context, state, isDark),
-            )
-          : _buildHeaderContent(context, state, isDark),
+        child: state.enableBlur
+            ? BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                child: _buildHeaderContent(context, state, isDark),
+              )
+            : _buildHeaderContent(context, state, isDark),
       ),
     );
   }
 
-  Widget _buildHeaderContent(BuildContext context, ExposureState state, bool isDark) {
+  Widget _buildHeaderContent(
+    BuildContext context,
+    ExposureState state,
+    bool isDark,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: isDark 
-            ? const Color(0xFF131313).withValues(alpha: state.enableBlur ? 0.7 : 1.0) 
+        color: isDark
+            ? const Color(
+                0xFF131313,
+              ).withValues(alpha: state.enableBlur ? 0.7 : 1.0)
             : Colors.white.withValues(alpha: state.enableBlur ? 0.7 : 1.0),
         border: Border(
           bottom: BorderSide(
-            color: isDark 
-                ? Colors.white.withValues(alpha: 0.05) 
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
                 : Colors.black.withValues(alpha: 0.05),
           ),
         ),
@@ -154,7 +184,8 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildBatteryIcon(ExposureState state, Color lcdInk) {
-    final isCharging = state.currentBatteryState == BatteryState.charging ||
+    final isCharging =
+        state.currentBatteryState == BatteryState.charging ||
         state.currentBatteryState == BatteryState.full;
     final level = state.batteryLevel;
 
@@ -182,7 +213,8 @@ class LightMeterScreen extends StatelessWidget {
   }
 
   Widget _buildBatteryStatusChip(ExposureState state, Color lcdInk) {
-    final isCharging = state.currentBatteryState == BatteryState.charging ||
+    final isCharging =
+        state.currentBatteryState == BatteryState.charging ||
         state.currentBatteryState == BatteryState.full;
     final isLow = state.batteryLevel > 0 && state.batteryLevel < 20;
 
@@ -199,12 +231,11 @@ class LightMeterScreen extends StatelessWidget {
 
     return Text(
       label,
-      style: TextStyle(fontFamily: 'DSEG14Classic', 
+      style: TextStyle(
+        fontFamily: 'VT323',
         fontSize: 14,
         color: color,
         letterSpacing: 0.5,
-        fontWeight: FontWeight.bold,
-        fontStyle: FontStyle.italic,
       ),
     );
   }
@@ -244,15 +275,11 @@ class LightMeterScreen extends StatelessWidget {
               child: Center(
                 child: Opacity(
                   opacity: 0.1,
-                  child: Icon(
-                    Icons.lock,
-                    size: 80,
-                    color: lcdInk,
-                  ),
+                  child: Icon(Icons.lock, size: 80, color: lcdInk),
                 ),
               ),
             ),
-          
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             child: Column(
@@ -263,7 +290,11 @@ class LightMeterScreen extends StatelessWidget {
                   children: [
                     Text(
                       'ISO :  ${state.iso}',
-                      style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 12, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+                      style: TextStyle(
+                        fontFamily: 'VT323',
+                        fontSize: 14,
+                        color: lcdInk,
+                      ),
                     ),
                     Row(
                       children: [
@@ -289,17 +320,22 @@ class LightMeterScreen extends StatelessWidget {
                       children: [
                         Text(
                           'T',
-                          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 14, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+                          style: TextStyle(
+                            fontFamily: 'VT323',
+                            fontSize: 16,
+                            color: lcdInk,
+                          ),
                         ),
                         Text(
-                          ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
-                          style: TextStyle(fontFamily: 'DSEG14Classic', 
-                            fontSize: 48,
+                          ExposureCalculator.formatShutterSpeed(
+                            state.shutterSpeed,
+                          ),
+                          style: TextStyle(
+                            fontFamily: 'VT323',
+                            fontSize: 56,
                             height: 0.9,
                             color: lcdInk,
                             letterSpacing: -2,
-                            fontWeight: FontWeight.bold,
-                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
@@ -317,19 +353,22 @@ class LightMeterScreen extends StatelessWidget {
                       children: [
                         Text(
                           'F',
-                          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 14, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+                          style: TextStyle(
+                            fontFamily: 'VT323',
+                            fontSize: 16,
+                            color: lcdInk,
+                          ),
                         ),
                         Text(
                           ExposureCalculator.formatAperture(
                             state.aperture,
                           ).replaceAll('f/', ''),
-                          style: TextStyle(fontFamily: 'DSEG14Classic', 
-                            fontSize: 48,
+                          style: TextStyle(
+                            fontFamily: 'VT323',
+                            fontSize: 56,
                             height: 0.9,
                             color: lcdInk,
                             letterSpacing: -2,
-                            fontWeight: FontWeight.bold,
-                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
@@ -401,11 +440,11 @@ class LightMeterScreen extends StatelessWidget {
       children: [
         Text(
           label.toUpperCase(),
-          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 9, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+          style: TextStyle(fontFamily: 'VT323', fontSize: 10, color: lcdInk),
         ),
         Text(
           value.toUpperCase(),
-          style: TextStyle(fontFamily: 'DSEG14Classic', fontSize: 18, color: lcdInk, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+          style: TextStyle(fontFamily: 'VT323', fontSize: 22, color: lcdInk),
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -470,29 +509,26 @@ class LightMeterScreen extends StatelessWidget {
           children: [
             Text(
               '-3',
-              style: TextStyle(fontFamily: 'DSEG14Classic', 
+              style: TextStyle(
+                fontFamily: 'VT323',
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
-                fontWeight: FontWeight.bold,
-                fontStyle: FontStyle.italic,
               ),
             ),
             Text(
               '0',
-              style: TextStyle(fontFamily: 'DSEG14Classic', 
+              style: TextStyle(
+                fontFamily: 'VT323',
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
-                fontWeight: FontWeight.bold,
-                fontStyle: FontStyle.italic,
               ),
             ),
             Text(
               '+3',
-              style: TextStyle(fontFamily: 'DSEG14Classic', 
+              style: TextStyle(
+                fontFamily: 'VT323',
                 fontSize: 10,
                 color: const Color(0xFF1A1F18),
-                fontWeight: FontWeight.bold,
-                fontStyle: FontStyle.italic,
               ),
             ),
           ],
@@ -501,7 +537,11 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickControls(BuildContext context, ExposureState state) {
+  Widget _buildQuickControls(
+    BuildContext context,
+    bool isLocked,
+    ExposureState state,
+  ) {
     return Row(
       children: [
         Expanded(
@@ -511,9 +551,32 @@ class LightMeterScreen extends StatelessWidget {
             isActive: false,
             color: const Color(0xFF00E5FF),
             onTap: () {
+              ExposureState.hapticMedium();
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const AnalogViewfinderScreen()),
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      const AnalogViewfinderScreen(),
+                  transitionDuration: const Duration(milliseconds: 400),
+                  reverseTransitionDuration: const Duration(milliseconds: 300),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                    return AnimatedBuilder(
+                      animation: animation,
+                      builder: (context, child) {
+                        final irisAnimation = CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeInOutCubic,
+                        );
+                        return ClipPath(
+                          clipper: _IrisRevealClipper(irisAnimation.value),
+                          child: child,
+                        );
+                      },
+                      child: child,
+                    );
+                  },
+                ),
               );
             },
           ),
@@ -521,10 +584,10 @@ class LightMeterScreen extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _build3DQuickButton(
-            label: state.isLocked ? 'LOCKED' : 'LOCK SENSOR',
-            icon: state.isLocked ? Icons.lock : Icons.lock_open,
-            isActive: state.isLocked,
-            color: state.isLocked
+            label: isLocked ? 'LOCKED' : 'LOCK SENSOR',
+            icon: isLocked ? Icons.lock : Icons.lock_open,
+            isActive: isLocked,
+            color: isLocked
                 ? const Color(0xFFFBBC00)
                 : const Color(0xFFE7E5E5),
             onTap: () => state.toggleLock(),
@@ -590,7 +653,8 @@ class LightMeterScreen extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
@@ -632,7 +696,7 @@ class LightMeterScreen extends StatelessWidget {
           child: GestureDetector(
             onTap: () {
               state.setTarget(m['target'] as CalculationTarget);
-              HapticFeedback.lightImpact();
+              ExposureState.hapticLight();
             },
             child: Container(
               height: 56,
@@ -707,7 +771,8 @@ class LightMeterScreen extends StatelessWidget {
                 children: [
                   Text(
                     m['label'] as String,
-                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: isActive ? Colors.black : Colors.white,
@@ -715,7 +780,8 @@ class LightMeterScreen extends StatelessWidget {
                   ),
                   Text(
                     m['full'] as String,
-                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 7,
                       fontWeight: FontWeight.bold,
                       color: isActive
@@ -793,9 +859,7 @@ class LightMeterScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: _build3DNdFilterBlock(context, state, isDark),
-            ),
+            Expanded(child: _build3DNdFilterBlock(context, state, isDark)),
           ],
         ),
         const SizedBox(height: 16),
@@ -891,7 +955,11 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _build3DNdFilterBlock(BuildContext context, ExposureState state, bool isDark) {
+  Widget _build3DNdFilterBlock(
+    BuildContext context,
+    ExposureState state,
+    bool isDark,
+  ) {
     return _build3DControlBlock(
       label: 'ND FILTER',
       value: state.ndFilter.label,
@@ -899,7 +967,9 @@ class LightMeterScreen extends StatelessWidget {
           ? const Color(0xFF8EFF71)
           : (isDark ? Colors.white : Colors.black),
       isDark: isDark,
-      caption: state.ndFilter == NdFilter.none ? null : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS',
+      caption: state.ndFilter == NdFilter.none
+          ? null
+          : '+${ExposureCalculator.getNdStops(state.ndFilter)} STOPS',
       onDecrement: () {
         final values = NdFilter.values;
         final index = values.indexOf(state.ndFilter);
@@ -914,7 +984,10 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  void _showShutterSpeedPickerDialog(BuildContext context, ExposureState state) {
+  void _showShutterSpeedPickerDialog(
+    BuildContext context,
+    ExposureState state,
+  ) {
     _showValuePickerDialog(
       context: context,
       state: state,
@@ -963,10 +1036,7 @@ class LightMeterScreen extends StatelessWidget {
       title: 'ISO SPEED',
       value: state.iso.toString(),
       onDecrement: () => state.setIso(
-        state.isoValues[math.max(
-          0,
-          state.isoValues.indexOf(state.iso) - 1,
-        )],
+        state.isoValues[math.max(0, state.isoValues.indexOf(state.iso) - 1)],
       ),
       onIncrement: () => state.setIso(
         state.isoValues[math.min(
@@ -988,7 +1058,7 @@ class LightMeterScreen extends StatelessWidget {
     final isDark = state.themeMode == ThemeMode.system
         ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
         : state.themeMode == ThemeMode.dark;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
@@ -1000,9 +1070,17 @@ class LightMeterScreen extends StatelessWidget {
           builder: (context, s, _) {
             // Re-fetch formatted value from state in case it updated via buttons
             String currentValue = value;
-            if (title == 'SHUTTER SPEED') currentValue = ExposureCalculator.formatShutterSpeed(s.shutterSpeed);
-            if (title == 'APERTURE') currentValue = ExposureCalculator.formatAperture(s.aperture);
-            if (title == 'ISO SPEED') currentValue = s.iso.toString();
+            if (title == 'SHUTTER SPEED') {
+              currentValue = ExposureCalculator.formatShutterSpeed(
+                s.shutterSpeed,
+              );
+            }
+            if (title == 'APERTURE') {
+              currentValue = ExposureCalculator.formatAperture(s.aperture);
+            }
+            if (title == 'ISO SPEED') {
+              currentValue = s.iso.toString();
+            }
 
             return Container(
               padding: const EdgeInsets.all(24),
@@ -1011,7 +1089,8 @@ class LightMeterScreen extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black,
@@ -1027,7 +1106,7 @@ class LightMeterScreen extends StatelessWidget {
                         color: s.primaryColor,
                         onPressed: () {
                           onDecrement();
-                          HapticFeedback.selectionClick();
+                          ExposureState.hapticSelection();
                         },
                       ),
                       Container(
@@ -1041,7 +1120,8 @@ class LightMeterScreen extends StatelessWidget {
                         ),
                         child: Text(
                           currentValue,
-                          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                          style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                             color: s.primaryColor,
@@ -1053,7 +1133,7 @@ class LightMeterScreen extends StatelessWidget {
                         color: s.primaryColor,
                         onPressed: () {
                           onIncrement();
-                          HapticFeedback.selectionClick();
+                          ExposureState.hapticSelection();
                         },
                       ),
                     ],
@@ -1062,7 +1142,7 @@ class LightMeterScreen extends StatelessWidget {
                 ],
               ),
             );
-          }
+          },
         );
       },
     );
@@ -1086,7 +1166,8 @@ class LightMeterScreen extends StatelessWidget {
             children: [
               Text(
                 'SELECT ND FILTER',
-                style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : Colors.black,
@@ -1100,7 +1181,8 @@ class LightMeterScreen extends StatelessWidget {
                 children: NdFilter.values.map((f) {
                   final isSelected = state.ndFilter == f;
                   final isDark = state.themeMode == ThemeMode.system
-                      ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+                      ? MediaQuery.platformBrightnessOf(context) ==
+                            Brightness.dark
                       : state.themeMode == ThemeMode.dark;
                   return GestureDetector(
                     onTap: () {
@@ -1122,7 +1204,8 @@ class LightMeterScreen extends StatelessWidget {
                       ),
                       child: Text(
                         f.label,
-                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                        style: TextStyle(
+                          fontFamily: 'SpaceGrotesk',
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: isSelected
@@ -1142,16 +1225,18 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFilmSimulationButton(BuildContext context, ExposureState state, bool isDark) {
+  Widget _buildFilmSimulationButton(
+    BuildContext context,
+    ExposureState state,
+    bool isDark,
+  ) {
     return InkWell(
       onTap: () {
-        HapticFeedback.mediumImpact();
+        ExposureState.hapticMedium();
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const Scaffold(
-              body: FilmDatabaseScreen(),
-            ),
+            builder: (context) => const Scaffold(body: FilmDatabaseScreen()),
           ),
         );
       },
@@ -1179,7 +1264,8 @@ class LightMeterScreen extends StatelessWidget {
               children: [
                 Text(
                   'FILM STOCK',
-                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
                     fontSize: 10,
                     color: isDark
                         ? const Color(0xFFACABAA)
@@ -1191,7 +1277,8 @@ class LightMeterScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   state.selectedFilm?.name.toUpperCase() ?? 'NONE',
-                  style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: state.primaryColor,
@@ -1251,17 +1338,23 @@ class LightMeterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBottomNavContent(BuildContext context, ExposureState state, bool isDark) {
+  Widget _buildBottomNavContent(
+    BuildContext context,
+    ExposureState state,
+    bool isDark,
+  ) {
     return Container(
       height: 72,
       decoration: BoxDecoration(
-        color: isDark 
-            ? const Color(0xFF131313).withValues(alpha: state.enableBlur ? 0.6 : 1.0) 
+        color: isDark
+            ? const Color(
+                0xFF131313,
+              ).withValues(alpha: state.enableBlur ? 0.6 : 1.0)
             : Colors.white.withValues(alpha: state.enableBlur ? 0.75 : 1.0),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDark 
-              ? Colors.white.withValues(alpha: 0.1) 
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.1)
               : Colors.black.withValues(alpha: 0.05),
         ),
         boxShadow: [
@@ -1277,7 +1370,7 @@ class LightMeterScreen extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onTap: () {
-                HapticFeedback.lightImpact();
+                ExposureState.hapticLight();
               },
               child: Container(
                 margin: const EdgeInsets.all(10),
@@ -1315,7 +1408,7 @@ class LightMeterScreen extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onTap: () {
-                HapticFeedback.lightImpact();
+                ExposureState.hapticLight();
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1326,9 +1419,13 @@ class LightMeterScreen extends StatelessWidget {
               child: Container(
                 margin: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5),
+                  color: isDark
+                      ? const Color(0xFF1A1A1A)
+                      : const Color(0xFFF5F5F5),
                   borderRadius: BorderRadius.circular(8),
-                  border: isDark ? null : Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                  border: isDark
+                      ? null
+                      : Border.all(color: Colors.black.withValues(alpha: 0.05)),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1345,7 +1442,9 @@ class LightMeterScreen extends StatelessWidget {
                         fontFamily: 'SpaceGrotesk',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? const Color(0xFF757575) : Colors.black45,
+                        color: isDark
+                            ? const Color(0xFF757575)
+                            : Colors.black45,
                         letterSpacing: 1.2,
                       ),
                     ),
@@ -1358,29 +1457,28 @@ class LightMeterScreen extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onTap: () {
-                HapticFeedback.lightImpact();
+                ExposureState.hapticLight();
                 Navigator.push(
                   context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const LogbookCoverScreen(),
-                    transitionDuration: const Duration(milliseconds: 300),
-                    reverseTransitionDuration: const Duration(milliseconds: 300),
-                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: child,
-                      );
-                    },
+                  PageTransition(
+                    type: PageTransitionType.rightToLeft,
+                    child: const LogbookCoverScreen(),
+                    curve: Curves.easeInOut,
+                    duration: const Duration(milliseconds: 350),
+                    reverseDuration: const Duration(milliseconds: 300),
                   ),
                 );
               },
               child: Container(
                 margin: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5),
+                  color: isDark
+                      ? const Color(0xFF1A1A1A)
+                      : const Color(0xFFF5F5F5),
                   borderRadius: BorderRadius.circular(8),
-                  border: isDark ? null : Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                  border: isDark
+                      ? null
+                      : Border.all(color: Colors.black.withValues(alpha: 0.05)),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1397,7 +1495,9 @@ class LightMeterScreen extends StatelessWidget {
                         fontFamily: 'SpaceGrotesk',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? const Color(0xFF757575) : Colors.black45,
+                        color: isDark
+                            ? const Color(0xFF757575)
+                            : Colors.black45,
                         letterSpacing: 1.2,
                       ),
                     ),
@@ -1419,10 +1519,7 @@ class _StaticBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _BackgroundPatternPainter(),
-      willChange: false,
-    );
+    return CustomPaint(painter: _BackgroundPatternPainter(), willChange: false);
   }
 }
 
@@ -1456,71 +1553,77 @@ void _showExpCompDialog(BuildContext context, ExposureState state) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (context) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'EXPOSURE COMPENSATION',
-              style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      return Consumer<ExposureState>(
+        builder: (context, s, _) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
-                  color: state.primaryColor,
-                  onPressed: () => state.setExposureCompensation(
-                    state.exposureCompensation - 0.3,
+                Text(
+                  'EXPOSURE COMPENSATION',
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                    letterSpacing: 2,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: state.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline),
+                      color: s.primaryColor,
+                      onPressed: () => s.setExposureCompensation(
+                        s.exposureCompensation - 0.3,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: s.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${s.exposureCompensation >= 0 ? '+' : ''}${s.exposureCompensation.toStringAsFixed(1)} EV',
+                        style: TextStyle(
+                          fontFamily: 'SpaceGrotesk',
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: s.primaryColor,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      color: s.primaryColor,
+                      onPressed: () => s.setExposureCompensation(
+                        s.exposureCompensation + 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => s.setExposureCompensation(0.0),
                   child: Text(
-                    '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)} EV',
-                    style: TextStyle(fontFamily: 'SpaceGrotesk', 
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: state.primaryColor,
+                    'RESET TO ZERO',
+                    style: TextStyle(
+                      color: s.primaryColor.withValues(alpha: 0.5),
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline),
-                  color: state.primaryColor,
-                  onPressed: () => state.setExposureCompensation(
-                    state.exposureCompensation + 0.3,
-                  ),
-                ),
+                const SizedBox(height: 16),
               ],
             ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => state.setExposureCompensation(0.0),
-              child: Text(
-                'RESET TO ZERO',
-                style: TextStyle(
-                  color: state.primaryColor.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          );
+        },
       );
     },
   );
@@ -1536,14 +1639,16 @@ void _showSensorSupportAlert(BuildContext context, ExposureState state) {
       backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
       title: Text(
         'No Sensor Detected',
-        style: TextStyle(fontFamily: 'SpaceGrotesk', 
+        style: TextStyle(
+          fontFamily: 'SpaceGrotesk',
           color: isDark ? Colors.white : Colors.black,
           fontWeight: FontWeight.bold,
         ),
       ),
       content: Text(
         'This app requires an ambient light sensor. Your device does not report one. Calculations will be simulated.',
-        style: TextStyle(fontFamily: 'SpaceGrotesk', 
+        style: TextStyle(
+          fontFamily: 'SpaceGrotesk',
           color: isDark ? const Color(0xFFACABAA) : const Color(0xFF757575),
         ),
       ),
@@ -1674,11 +1779,15 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
         child: Container(
           height: 84,
           decoration: BoxDecoration(
-            color: widget.isDark ? const Color(0xFF161719) : const Color(0xFFF2F2F2),
+            color: widget.isDark
+                ? const Color(0xFF161719)
+                : const Color(0xFFF2F2F2),
             image: skeuomorphicNoise,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: widget.isDark ? const Color(0xFF000000) : Colors.black.withValues(alpha: 0.05),
+              color: widget.isDark
+                  ? const Color(0xFF000000)
+                  : Colors.black.withValues(alpha: 0.05),
               width: 1,
             ),
             boxShadow: widget.isDark
@@ -1716,7 +1825,8 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
             children: [
               Text(
                 widget.label,
-                style: const TextStyle(fontFamily: 'SpaceGrotesk', 
+                style: const TextStyle(
+                  fontFamily: 'SpaceGrotesk',
                   fontSize: 8,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF767575),
@@ -1730,7 +1840,7 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
                     icon: Icons.remove,
                     isDark: widget.isDark,
                     onTap: () {
-                      HapticFeedback.lightImpact();
+                      ExposureState.hapticLight();
                       widget.onDecrement();
                     },
                   ),
@@ -1738,7 +1848,8 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
                     children: [
                       Text(
                         widget.value,
-                        style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                        style: TextStyle(
+                          fontFamily: 'SpaceGrotesk',
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: widget.color,
@@ -1747,7 +1858,8 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
                       if (widget.caption != null)
                         Text(
                           widget.caption!,
-                          style: TextStyle(fontFamily: 'SpaceGrotesk', 
+                          style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
                             fontSize: 6,
                             fontWeight: FontWeight.bold,
                             color: widget.color.withValues(alpha: 0.5),
@@ -1759,7 +1871,7 @@ class _Interactive3DBlockState extends State<_Interactive3DBlock> {
                     icon: Icons.add,
                     isDark: widget.isDark,
                     onTap: () {
-                      HapticFeedback.lightImpact();
+                      ExposureState.hapticLight();
                       widget.onIncrement();
                     },
                   ),
@@ -1810,10 +1922,7 @@ class _BlockButtonState extends State<_BlockButton> {
               end: Alignment.bottomCenter,
               colors: widget.isDark
                   ? [const Color(0xFF383838), const Color(0xFF111111)]
-                  : [
-                      const Color(0xFFFFFFFF),
-                      const Color(0xFFE0E0E0),
-                    ],
+                  : [const Color(0xFFFFFFFF), const Color(0xFFE0E0E0)],
             ),
             borderRadius: BorderRadius.circular(4),
             border: Border.all(
@@ -1838,13 +1947,30 @@ class _BlockButtonState extends State<_BlockButton> {
                     ),
                   ],
           ),
-          child: Icon(
-            widget.icon,
-            size: 16,
-            color: const Color(0xFF767575),
-          ),
+          child: Icon(widget.icon, size: 16, color: const Color(0xFF767575)),
         ),
       ),
     );
   }
+}
+
+class _IrisRevealClipper extends CustomClipper<Path> {
+  final double progress;
+
+  _IrisRevealClipper(this.progress);
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final center = Offset(size.width / 2, size.height / 2);
+    // Find half diagonal distance as maximum radius
+    final maxRadius = math.sqrt(size.width * size.width + size.height * size.height);
+    final radius = maxRadius * progress;
+    
+    path.addOval(Rect.fromCircle(center: center, radius: radius));
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_IrisRevealClipper oldClipper) => oldClipper.progress != progress;
 }

@@ -1,10 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:animations/animations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../camera_viewfinder_screen.dart';
+import '../exposure_state.dart';
 import 'log_entry.dart';
 import 'logbook_store.dart';
 import 'logbook_theme.dart';
@@ -26,16 +27,27 @@ class LogbookScreen extends StatefulWidget {
 
 class _LogbookScreenState extends State<LogbookScreen> {
   List<LogEntry> _entries = const [];
+  List<LogEntry> _sortedEntries = const [];
+  Map<String, List<LogEntry>> _folderEntriesMap = {};
   bool _loading = true;
   LogbookSortOrder _sortOrder = LogbookSortOrder.dateDescending;
   bool _compactMode = false;
   int _currentTab = 0; // 0 = Frames, 1 = Collections
   LogFolder? _activeFolder; // Filtered collection active
 
+  late final PageController _pageController;
+
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _currentTab);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -48,20 +60,50 @@ class _LogbookScreenState extends State<LogbookScreen> {
       _loading = false;
       _compactMode = prefs.getBool('logbook_compact_mode') ?? false;
     });
+    _updateProcessedData();
   }
 
-  Future<void> _openDetail(LogEntry entry) async {
+  void _updateProcessedData() {
+    // 1. Handle sorting and filtering for the main list
+    final filtered = _activeFolder != null
+        ? _entries.where((e) => e.folderId == _activeFolder!.id).toList()
+        : List<LogEntry>.from(_entries);
+
+    if (_sortOrder == LogbookSortOrder.dateDescending) {
+      filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else if (_sortOrder == LogbookSortOrder.dateAscending) {
+      filtered.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    } else if (_sortOrder == LogbookSortOrder.titleAZ) {
+      filtered.sort((a, b) {
+        final titleA = a.title.trim().isEmpty ? (a.filmName ?? '') : a.title;
+        final titleB = b.title.trim().isEmpty ? (b.filmName ?? '') : b.title;
+        return titleA.toLowerCase().compareTo(titleB.toLowerCase());
+      });
+    }
+    _sortedEntries = filtered;
+
+    // 2. Pre-calculate entries per folder to avoid O(N*F) in builder
+    final folderMap = <String, List<LogEntry>>{};
+    for (final e in _entries) {
+      if (e.folderId != null) {
+        folderMap.putIfAbsent(e.folderId!, () => []).add(e);
+      }
+    }
+    _folderEntriesMap = folderMap;
+  }
+
+  Future<void> _openDetail(LogEntry entry, {bool startInEditMode = false}) async {
     // Pre-decode the image at the EXACT size the detail screen will display
     // (cacheWidth 1200), so the Hero transition doesn't stall on first decode.
     // Plain FileImage would decode at native res → different cache key → wasted.
-    await precacheImage(
+    precacheImage(
       ResizeImage(FileImage(File(entry.imagePath)), width: 1200),
       context,
     );
 
     if (!mounted) return;
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry)),
+      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry, startInEditMode: startInEditMode)),
     );
     if (changed == true && mounted) _load();
   }
@@ -74,7 +116,7 @@ class _LogbookScreenState extends State<LogbookScreen> {
     if (mounted) _load();
   }
 
-  void _showContextMenu(BuildContext context, LogEntry entry, Offset position) async {
+  void _showContextMenu(BuildContext context, LogEntry entry, Offset position, {VoidCallback? onEdit}) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final paperColor = isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9);
     final inkColor = LogbookTheme.ink(isDark);
@@ -129,7 +171,11 @@ class _LogbookScreenState extends State<LogbookScreen> {
 
     if (!mounted) return;
     if (selected == 'edit') {
-      _openDetail(entry);
+      if (onEdit != null) {
+        onEdit();
+      } else {
+        _openDetail(entry, startInEditMode: true);
+      }
     } else if (selected == 'move') {
       _showMoveToFolderDialog(entry);
     } else if (selected == 'delete') {
@@ -339,8 +385,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
                       _activeFolder!.name,
                       subtitle: 'Collection Archive',
                       onBack: () {
-                        HapticFeedback.lightImpact();
+                        ExposureState.hapticLight();
                         setState(() => _activeFolder = null);
+                        _updateProcessedData();
                       },
                       actions: [
                         _buildSortButton(isDark),
@@ -357,7 +404,7 @@ class _LogbookScreenState extends State<LogbookScreen> {
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () async {
-                            HapticFeedback.lightImpact();
+                            ExposureState.hapticLight();
                             final newVal = !_compactMode;
                             setState(() => _compactMode = newVal);
                             final prefs = await SharedPreferences.getInstance();
@@ -378,7 +425,7 @@ class _LogbookScreenState extends State<LogbookScreen> {
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            HapticFeedback.lightImpact();
+                            ExposureState.hapticLight();
                             _openViewfinder();
                           },
                           child: Container(
@@ -407,24 +454,23 @@ class _LogbookScreenState extends State<LogbookScreen> {
                       ),
                     ),
                   Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      reverseDuration: const Duration(milliseconds: 200),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: ScaleTransition(
-                          scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                            CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                          ),
-                          child: child,
-                        ),
-                      ),
-                      child: KeyedSubtree(
-                        key: ValueKey('${_activeFolder?.id ?? "root"}_$_currentTab'),
-                        child: _body(isDark),
-                      ),
+                    child: LogbookTheme.paperBackground(
+                      isDark: isDark,
+                      child: _activeFolder != null
+                          ? _framesTabBody(isDark)
+                          : PageView(
+                              controller: _pageController,
+                              onPageChanged: (index) {
+                                ExposureState.hapticSelection();
+                                setState(() {
+                                  _currentTab = index;
+                                });
+                              },
+                              children: [
+                                _framesTabBody(isDark),
+                                _collectionsTabBody(isDark),
+                              ],
+                            ),
                     ),
                   ),
                 ],
@@ -443,10 +489,12 @@ class _LogbookScreenState extends State<LogbookScreen> {
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _currentTab = index;
-        });
+        ExposureState.hapticLight();
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -483,10 +531,11 @@ class _LogbookScreenState extends State<LogbookScreen> {
         width: 1,
       ),
       onSelected: (order) {
-        HapticFeedback.lightImpact();
+        ExposureState.hapticLight();
         setState(() {
           _sortOrder = order;
         });
+        _updateProcessedData();
       },
       itemBuilder: (ctx) => [
         PopupMenuItem(
@@ -526,64 +575,46 @@ class _LogbookScreenState extends State<LogbookScreen> {
     );
   }
 
-  Widget _body(bool isDark) {
+  Widget _framesTabBody(bool isDark) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
 
-    final filteredEntries = _activeFolder != null
-        ? _entries.where((e) => e.folderId == _activeFolder!.id).toList()
-        : _entries;
-
-    if (_activeFolder == null && _currentTab == 1) {
-      return _collectionsTabBody(isDark);
-    }
-
-    if (filteredEntries.isEmpty) {
+    if (_sortedEntries.isEmpty) {
       return _empty(isDark, isFiltered: _activeFolder != null);
     }
 
-    final sortedEntries = List<LogEntry>.from(filteredEntries);
-    if (_sortOrder == LogbookSortOrder.dateDescending) {
-      sortedEntries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } else if (_sortOrder == LogbookSortOrder.dateAscending) {
-      sortedEntries.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    } else if (_sortOrder == LogbookSortOrder.titleAZ) {
-      sortedEntries.sort((a, b) {
-        final titleA = a.title.trim().isEmpty ? (a.filmName ?? '') : a.title;
-        final titleB = b.title.trim().isEmpty ? (b.filmName ?? '') : b.title;
-        return titleA.toLowerCase().compareTo(titleB.toLowerCase());
-      });
-    }
-
-    return LogbookTheme.paperBackground(
-      isDark: isDark,
+    return PageTransitionSwitcher(
+      duration: const Duration(milliseconds: 400),
+      transitionBuilder: (child, primaryAnimation, secondaryAnimation) {
+        return FadeThroughTransition(
+          animation: primaryAnimation,
+          secondaryAnimation: secondaryAnimation,
+          child: child,
+        );
+      },
       child: ListView.builder(
+        key: ValueKey(_compactMode),
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-        itemCount: sortedEntries.length,
+        itemCount: _sortedEntries.length,
         itemBuilder: (context, i) {
-          final entry = sortedEntries[i];
+          final entry = _sortedEntries[i];
           Offset tapPosition = Offset.zero;
-          return RepaintBoundary(
-            key: ValueKey('${entry.id}_${_compactMode}_${_activeFolder != null}'),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) {
-                tapPosition = details.globalPosition;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) {
+              tapPosition = details.globalPosition;
+            },
+            child: _LogEntryContainer(
+              entry: entry,
+              compactMode: _compactMode,
+              isDark: isDark,
+              onClosed: () {
+                if (mounted) _load();
               },
-              onLongPress: () {
-                HapticFeedback.mediumImpact();
-                _showContextMenu(context, entry, tapPosition);
+              onLongPress: (triggerEdit) {
+                _showContextMenu(context, entry, tapPosition, onEdit: triggerEdit);
               },
-              child: _compactMode
-                  ? _CompactListRow(
-                      entry: entry,
-                      onTap: () => _openDetail(entry),
-                    )
-                  : _PolaroidCard(
-                      entry: entry,
-                      onTap: () => _openDetail(entry),
-                    ),
             ),
           );
         },
@@ -593,65 +624,122 @@ class _LogbookScreenState extends State<LogbookScreen> {
 
   Widget _collectionsTabBody(bool isDark) {
     final folders = LogbookStore.instance.folders;
+    final totalCount = folders.length + 1;
 
-    return LogbookTheme.paperBackground(
-      isDark: isDark,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 80),
-        itemCount: folders.length + 1,
-        itemBuilder: (context, i) {
-          if (i == folders.length) {
-            return _CreateFolderCard(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _showCreateFolderDialog(null);
+    return PageTransitionSwitcher(
+      duration: const Duration(milliseconds: 400),
+      transitionBuilder: (child, primaryAnimation, secondaryAnimation) {
+        return FadeThroughTransition(
+          animation: primaryAnimation,
+          secondaryAnimation: secondaryAnimation,
+          child: child,
+        );
+      },
+      child: !_compactMode
+          ? GridView.builder(
+              key: const ValueKey('folders_grid'),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 80),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 0.76,
+              ),
+              itemCount: totalCount,
+              itemBuilder: (context, i) {
+                if (i == folders.length) {
+                  return _CreateFolderCard(
+                    onTap: () {
+                      ExposureState.hapticLight();
+                      _showCreateFolderDialog(null);
+                    },
+                    isGrid: true,
+                  );
+                }
+                final folder = folders[i];
+                final folderEntries = _folderEntriesMap[folder.id] ?? [];
+                return Hero(
+                  tag: 'folder_card_${folder.id}',
+                  child: OpenContainer(
+                    transitionType: ContainerTransitionType.fade,
+                    transitionDuration: const Duration(milliseconds: 600),
+                    closedColor: Colors.transparent,
+                    closedElevation: 0,
+                    openElevation: 0,
+                    middleColor: Colors.transparent,
+                    openColor: LogbookTheme.paper(isDark),
+                    onClosed: (_) {
+                      if (mounted) _load();
+                    },
+                    openBuilder: (context, action) => FolderDetailScreen(folder: folder),
+                    closedBuilder: (context, action) => _FolderCard(
+                      folder: folder,
+                      folderEntries: folderEntries,
+                      onTap: () {
+                        ExposureState.hapticLight();
+                        action();
+                      },
+                      onLongPress: () {
+                        ExposureState.hapticMedium();
+                        _showFolderContextMenu(context, folder);
+                      },
+                      isGrid: true,
+                    ),
+                  ),
+                );
               },
-            );
-          }
-          final folder = folders[i];
-          final folderEntries = _entries.where((e) => e.folderId == folder.id).toList();
-          return Hero(
-            tag: 'folder_card_${folder.id}',
-            child: _FolderCard(
-              folder: folder,
-              folderEntries: folderEntries,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _openFolder(folder);
-              },
-              onLongPress: () {
-                HapticFeedback.mediumImpact();
-                _showFolderContextMenu(context, folder);
+            )
+          : ListView.builder(
+              key: const ValueKey('folders_list'),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 80),
+              itemCount: totalCount,
+              itemBuilder: (context, i) {
+                if (i == folders.length) {
+                  return _CreateFolderCard(
+                    onTap: () {
+                      ExposureState.hapticLight();
+                      _showCreateFolderDialog(null);
+                    },
+                    isGrid: false,
+                  );
+                }
+                final folder = folders[i];
+                final folderEntries = _folderEntriesMap[folder.id] ?? [];
+                return Hero(
+                  tag: 'folder_card_${folder.id}',
+                  child: OpenContainer(
+                    transitionType: ContainerTransitionType.fade,
+                    transitionDuration: const Duration(milliseconds: 600),
+                    closedColor: Colors.transparent,
+                    closedElevation: 0,
+                    openElevation: 0,
+                    middleColor: Colors.transparent,
+                    openColor: LogbookTheme.paper(isDark),
+                    onClosed: (_) {
+                      if (mounted) _load();
+                    },
+                    openBuilder: (context, action) => FolderDetailScreen(folder: folder),
+                    closedBuilder: (context, action) => _FolderCard(
+                      folder: folder,
+                      folderEntries: folderEntries,
+                      onTap: () {
+                        ExposureState.hapticLight();
+                        action();
+                      },
+                      onLongPress: () {
+                        ExposureState.hapticMedium();
+                        _showFolderContextMenu(context, folder);
+                      },
+                      isGrid: false,
+                    ),
+                  ),
+                );
               },
             ),
-          );
-        },
-      ),
     );
   }
 
-  Future<void> _openFolder(LogFolder folder) async {
-    await Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            FolderDetailScreen(folder: folder),
-        transitionDuration: const Duration(milliseconds: 380),
-        reverseTransitionDuration: const Duration(milliseconds: 280),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: child,
-          );
-        },
-      ),
-    );
-    if (mounted) _load();
-  }
+
 
   void _showFolderContextMenu(BuildContext context, LogFolder folder) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -863,11 +951,7 @@ class _PolaroidCard extends StatelessWidget {
     // Always keep the Polaroid card background white/light cream, even in dark mode.
     const cardColor = Color(0xFFFBF6E9);
 
-    final double rotateAngle = ((entry.id.hashCode % 100) - 50) / 2500; // slight rotation between -1.1 and +1.1 deg
-
-    return Transform.rotate(
-      angle: rotateAngle,
-      child: GestureDetector(
+    return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
@@ -1028,9 +1112,8 @@ class _PolaroidCard extends StatelessWidget {
           ],
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   static String _formatDate(DateTime dt) {
     const months = [
@@ -1038,6 +1121,100 @@ class _PolaroidCard extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}';
+  }
+}
+
+class _LogEntryContainer extends StatefulWidget {
+  final LogEntry entry;
+  final bool compactMode;
+  final bool isDark;
+  final VoidCallback onClosed;
+  final void Function(VoidCallback triggerEdit) onLongPress;
+
+  const _LogEntryContainer({
+    required this.entry,
+    required this.compactMode,
+    required this.isDark,
+    required this.onClosed,
+    required this.onLongPress,
+  });
+
+  @override
+  State<_LogEntryContainer> createState() => _LogEntryContainerState();
+}
+
+class _LogEntryContainerState extends State<_LogEntryContainer> {
+  bool _startInEditMode = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final double rotateAngle = widget.compactMode
+        ? 0.0
+        : (((widget.entry.id.hashCode * 37) % 100) - 50) / 800; // rotation between -3.5 and +3.5 deg
+
+    return OpenContainer<bool>(
+      transitionType: ContainerTransitionType.fade,
+      transitionDuration: const Duration(milliseconds: 600),
+      closedColor: Colors.transparent,
+      closedElevation: 0,
+      openElevation: 0,
+      middleColor: Colors.transparent,
+      openColor: LogbookTheme.paper(widget.isDark),
+      clipBehavior: Clip.none,
+      onClosed: (changed) {
+        if (changed == true) {
+          widget.onClosed();
+        }
+      },
+      openBuilder: (context, action) {
+        final edit = _startInEditMode;
+        _startInEditMode = false;
+        return LogDetailScreen(entry: widget.entry, startInEditMode: edit);
+      },
+      closedBuilder: (context, action) {
+        final closedChild = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress: () {
+            widget.onLongPress(() {
+              setState(() {
+                _startInEditMode = true;
+              });
+              action();
+            });
+          },
+          child: widget.compactMode
+              ? _CompactListRow(
+                  entry: widget.entry,
+                  onTap: () {
+                    precacheImage(
+                      ResizeImage(FileImage(File(widget.entry.imagePath)), width: 1200),
+                      context,
+                    );
+                    action();
+                  },
+                )
+              : _PolaroidCard(
+                  entry: widget.entry,
+                  onTap: () {
+                    precacheImage(
+                      ResizeImage(FileImage(File(widget.entry.imagePath)), width: 1200),
+                      context,
+                    );
+                    action();
+                  },
+                ),
+        );
+
+        if (rotateAngle == 0.0) {
+          return closedChild;
+        }
+
+        return Transform.rotate(
+          angle: rotateAngle,
+          child: closedChild,
+        );
+      },
+    );
   }
 }
 
@@ -1381,12 +1558,14 @@ class _FolderCard extends StatelessWidget {
   final List<LogEntry> folderEntries;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final bool isGrid;
 
   const _FolderCard({
     required this.folder,
     required this.folderEntries,
     required this.onTap,
     required this.onLongPress,
+    this.isGrid = false,
   });
 
   @override
@@ -1427,19 +1606,23 @@ class _FolderCard extends StatelessWidget {
     );
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 20),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: isGrid ? MainAxisSize.max : MainAxisSize.min,
           children: [
             // Folder Tab top shape
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isGrid ? 12 : 16,
+                    vertical: isGrid ? 4 : 6,
+                  ),
                   decoration: BoxDecoration(
                     gradient: folderGradient,
                     border: Border(
@@ -1456,13 +1639,13 @@ class _FolderCard extends StatelessWidget {
                     'ARCHIVE',
                     style: stampStyle(
                       color: accentLabel,
-                      size: 11,
+                      size: isGrid ? 9 : 11,
                     ).copyWith(fontWeight: FontWeight.bold),
                   ),
                 ),
                 Expanded(
                   child: Container(
-                    height: 23, // aligns with tab height + padding
+                    height: isGrid ? 19 : 23, // aligns with tab height + padding
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: borderSide,
@@ -1473,142 +1656,245 @@ class _FolderCard extends StatelessWidget {
               ],
             ),
             // Folder Main Body
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: BoxDecoration(
-                gradient: folderGradient,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(8),
-                  bottomRight: Radius.circular(8),
-                  topRight: Radius.circular(8),
-                ),
-                border: Border(
-                  left: borderSide,
-                  right: borderSide,
-                  bottom: borderSide,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-                    offset: const Offset(1, 3),
-                    blurRadius: 6,
+            Expanded(
+              flex: isGrid ? 1 : 0,
+              child: Container(
+                width: double.infinity,
+                padding: isGrid
+                    ? const EdgeInsets.fromLTRB(12, 12, 12, 12)
+                    : const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                decoration: BoxDecoration(
+                  gradient: folderGradient,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                    topRight: Radius.circular(8),
                   ),
-                ],
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Folder text detail
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          folder.name,
-                          style: caveat(
-                            size: 26,
-                            weight: FontWeight.bold,
-                            color: inkColor,
-                          ),
-                        ),
-                        if (folder.note.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+                  border: Border(
+                    left: borderSide,
+                    right: borderSide,
+                    bottom: borderSide,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      offset: const Offset(1, 3),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: isGrid
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            folder.note,
-                            maxLines: 2,
+                            folder.name,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: caveat(
-                              size: 18,
-                              color: fadedColor,
+                              size: 21,
+                              weight: FontWeight.bold,
+                              color: inkColor,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${folderEntries.length} ${folderEntries.length == 1 ? "Frame" : "Frames"}',
+                            style: stampStyle(
+                              color: accentLabel,
+                              size: 11,
+                            ),
+                          ),
+                          const Spacer(),
+                          Center(
+                            child: SizedBox(
+                              width: 80,
+                              height: 60,
+                              child: folderEntries.isEmpty
+                                  ? Container(
+                                      decoration: BoxDecoration(
+                                        color: isDark ? Colors.black26 : Colors.white24,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Icon(
+                                        Icons.folder_open,
+                                        color: fadedColor.withValues(alpha: 0.3),
+                                        size: 24,
+                                      ),
+                                    )
+                                  : Stack(
+                                      clipBehavior: Clip.none,
+                                      alignment: Alignment.center,
+                                      children: List.generate(
+                                        folderEntries.length > 3 ? 3 : folderEntries.length,
+                                        (idx) {
+                                          final entry = folderEntries[folderEntries.length - 1 - idx];
+                                          double rot = (idx == 0) ? -0.05 : (idx == 1 ? 0.06 : -0.12);
+                                          double offsetDx = (idx == 0) ? -6.0 : (idx == 1 ? 6.0 : 0.0);
+                                          double offsetDy = (idx == 0) ? 3.0 : (idx == 1 ? -3.0 : 0.0);
+
+                                          return Positioned(
+                                            left: 8 + offsetDx,
+                                            top: 8 + offsetDy,
+                                            child: Transform.rotate(
+                                              angle: rot,
+                                              child: Container(
+                                                padding: const EdgeInsets.fromLTRB(2, 2, 2, 5),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white, // stays white
+                                                  border: Border.all(
+                                                    color: Colors.black.withValues(alpha: 0.15),
+                                                    width: 0.5,
+                                                  ),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Colors.black.withValues(alpha: 0.12),
+                                                      offset: const Offset(1, 1.5),
+                                                      blurRadius: 2,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: SizedBox(
+                                                  width: 40,
+                                                  height: 32,
+                                                  child: Image.file(
+                                                    File(entry.imagePath),
+                                                    fit: BoxFit.cover,
+                                                    cacheWidth: 100,
+                                                    errorBuilder: (ctx, error, stack) => Container(
+                                                      color: Colors.black12,
+                                                      child: Icon(
+                                                        Icons.broken_image_outlined,
+                                                        color: LogbookTheme.faded(false),
+                                                        size: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
                             ),
                           ),
                         ],
-                        const SizedBox(height: 12),
-                        Text(
-                          '${folderEntries.length} ${folderEntries.length == 1 ? "Frame" : "Frames"}',
-                          style: stampStyle(
-                            color: accentLabel,
-                            size: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Stacked miniature Polaroids
-                  SizedBox(
-                    width: 100,
-                    height: 85,
-                    child: folderEntries.isEmpty
-                        ? Container(
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.black26 : Colors.white24,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Icon(
-                              Icons.folder_open,
-                              color: fadedColor.withValues(alpha: 0.3),
-                              size: 32,
-                            ),
-                          )
-                        : Stack(
-                            clipBehavior: Clip.none,
-                            alignment: Alignment.center,
-                            children: List.generate(
-                              folderEntries.length > 3 ? 3 : folderEntries.length,
-                              (idx) {
-                                final entry = folderEntries[folderEntries.length - 1 - idx];
-                                double rot = (idx == 0) ? -0.05 : (idx == 1 ? 0.06 : -0.12);
-                                double offsetDx = (idx == 0) ? -8.0 : (idx == 1 ? 8.0 : 0.0);
-                                double offsetDy = (idx == 0) ? 4.0 : (idx == 1 ? -4.0 : 0.0);
-
-                                return Positioned(
-                                  left: 10 + offsetDx,
-                                  top: 10 + offsetDy,
-                                  child: Transform.rotate(
-                                    angle: rot,
-                                    child: Container(
-                                      padding: const EdgeInsets.fromLTRB(3, 3, 3, 7),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white, // stays white
-                                        border: Border.all(
-                                          color: Colors.black.withValues(alpha: 0.15),
-                                          width: 0.5,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.12),
-                                            offset: const Offset(1, 1.5),
-                                            blurRadius: 2,
-                                          ),
-                                        ],
-                                      ),
-                                      child: SizedBox(
-                                        width: 50,
-                                        height: 42,
-                                        child: Image.file(
-                                          File(entry.imagePath),
-                                          fit: BoxFit.cover,
-                                          cacheWidth: 100,
-                                          errorBuilder: (ctx, error, stack) => Container(
-                                            color: Colors.black12,
-                                            child: Icon(
-                                              Icons.broken_image_outlined,
-                                              color: LogbookTheme.faded(false),
-                                              size: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Folder text detail
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  folder.name,
+                                  style: caveat(
+                                    size: 26,
+                                    weight: FontWeight.bold,
+                                    color: inkColor,
+                                  ),
+                                ),
+                                if (folder.note.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    folder.note,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: caveat(
+                                      size: 18,
+                                      color: fadedColor,
                                     ),
                                   ),
-                                );
-                              },
+                                ],
+                                const SizedBox(height: 12),
+                                Text(
+                                  '${folderEntries.length} ${folderEntries.length == 1 ? "Frame" : "Frames"}',
+                                  style: stampStyle(
+                                    color: accentLabel,
+                                    size: 13,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                  ),
-                ],
+                          const SizedBox(width: 12),
+                          // Stacked miniature Polaroids
+                          SizedBox(
+                            width: 100,
+                            height: 85,
+                            child: folderEntries.isEmpty
+                                ? Container(
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.black26 : Colors.white24,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Icon(
+                                      Icons.folder_open,
+                                      color: fadedColor.withValues(alpha: 0.3),
+                                      size: 32,
+                                    ),
+                                  )
+                                : Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.center,
+                                    children: List.generate(
+                                      folderEntries.length > 3 ? 3 : folderEntries.length,
+                                      (idx) {
+                                        final entry = folderEntries[folderEntries.length - 1 - idx];
+                                        double rot = (idx == 0) ? -0.05 : (idx == 1 ? 0.06 : -0.12);
+                                        double offsetDx = (idx == 0) ? -8.0 : (idx == 1 ? 8.0 : 0.0);
+                                        double offsetDy = (idx == 0) ? 4.0 : (idx == 1 ? -4.0 : 0.0);
+
+                                        return Positioned(
+                                          left: 10 + offsetDx,
+                                          top: 10 + offsetDy,
+                                          child: Transform.rotate(
+                                            angle: rot,
+                                            child: Container(
+                                              padding: const EdgeInsets.fromLTRB(3, 3, 3, 7),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white, // stays white
+                                                border: Border.all(
+                                                  color: Colors.black.withValues(alpha: 0.15),
+                                                  width: 0.5,
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.black.withValues(alpha: 0.12),
+                                                    offset: const Offset(1, 1.5),
+                                                    blurRadius: 2,
+                                                  ),
+                                                ],
+                                              ),
+                                              child: SizedBox(
+                                                width: 50,
+                                                height: 42,
+                                                child: Image.file(
+                                                  File(entry.imagePath),
+                                                  fit: BoxFit.cover,
+                                                  cacheWidth: 100,
+                                                  errorBuilder: (ctx, error, stack) => Container(
+                                                    color: Colors.black12,
+                                                    child: Icon(
+                                                      Icons.broken_image_outlined,
+                                                      color: LogbookTheme.faded(false),
+                                                      size: 14,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],
@@ -1620,8 +1906,9 @@ class _FolderCard extends StatelessWidget {
 
 class _CreateFolderCard extends StatelessWidget {
   final VoidCallback onTap;
+  final bool isGrid;
 
-  const _CreateFolderCard({required this.onTap});
+  const _CreateFolderCard({required this.onTap, this.isGrid = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1630,7 +1917,7 @@ class _CreateFolderCard extends StatelessWidget {
     final fadedColor = LogbookTheme.faded(isDark);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 20),
       child: DottedBorderWidget(
         color: fadedColor.withValues(alpha: 0.4),
         strokeWidth: 1.5,
@@ -1642,20 +1929,24 @@ class _CreateFolderCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            height: isGrid ? double.infinity : null,
+            padding: isGrid
+                ? const EdgeInsets.symmetric(vertical: 16, horizontal: 12)
+                : const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   Icons.create_new_folder_outlined,
                   color: inkColor,
-                  size: 32,
+                  size: isGrid ? 28 : 32,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Create New Archive Folder',
+                  isGrid ? 'Create Folder' : 'Create New Archive Folder',
+                  textAlign: TextAlign.center,
                   style: caveat(
-                    size: 22,
+                    size: isGrid ? 19 : 22,
                     weight: FontWeight.bold,
                     color: inkColor,
                   ),
@@ -1776,6 +2067,7 @@ class FolderDetailScreen extends StatefulWidget {
 
 class _FolderDetailScreenState extends State<FolderDetailScreen> {
   List<LogEntry> _entries = [];
+  List<LogEntry> _sortedEntries = [];
   bool _loading = true;
   bool _compactMode = false;
   LogbookSortOrder _sortOrder = LogbookSortOrder.dateDescending;
@@ -1797,22 +2089,39 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       _loading = false;
       _compactMode = prefs.getBool('logbook_compact_mode') ?? false;
     });
+    _updateSortedEntries();
   }
 
-  void _openDetail(LogEntry entry) async {
+  void _updateSortedEntries() {
+    final sorted = List<LogEntry>.from(_entries);
+    if (_sortOrder == LogbookSortOrder.dateDescending) {
+      sorted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else if (_sortOrder == LogbookSortOrder.dateAscending) {
+      sorted.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    } else if (_sortOrder == LogbookSortOrder.titleAZ) {
+      sorted.sort((a, b) {
+        final titleA = a.title.trim().isEmpty ? (a.filmName ?? '') : a.title;
+        final titleB = b.title.trim().isEmpty ? (b.filmName ?? '') : b.title;
+        return titleA.toLowerCase().compareTo(titleB.toLowerCase());
+      });
+    }
+    _sortedEntries = sorted;
+  }
+
+  void _openDetail(LogEntry entry, {bool startInEditMode = false}) async {
     // Pre-decode at detail-screen size (cacheWidth 1200) so Hero is smooth.
-    await precacheImage(
+    precacheImage(
       ResizeImage(FileImage(File(entry.imagePath)), width: 1200),
       context,
     );
     if (!mounted) return;
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry)),
+      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry, startInEditMode: startInEditMode)),
     );
     if (changed == true && mounted) _load();
   }
 
-  void _showContextMenu(BuildContext context, LogEntry entry, Offset position) async {
+  void _showContextMenu(BuildContext context, LogEntry entry, Offset position, {VoidCallback? onEdit}) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final paperColor = isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9);
     final inkColor = LogbookTheme.ink(isDark);
@@ -1867,7 +2176,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
     if (!mounted) return;
     if (selected == 'edit') {
-      _openDetail(entry);
+      if (onEdit != null) {
+        onEdit();
+      } else {
+        _openDetail(entry, startInEditMode: true);
+      }
     } else if (selected == 'move') {
       _showMoveToFolderDialog(entry);
     } else if (selected == 'delete') {
@@ -2018,10 +2331,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                         width: 1,
                       ),
                       onSelected: (order) {
-                        HapticFeedback.lightImpact();
+                        ExposureState.hapticLight();
                         setState(() {
                           _sortOrder = order;
                         });
+                        _updateSortedEntries();
                       },
                       itemBuilder: (ctx) => [
                         PopupMenuItem(
@@ -2064,7 +2378,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () async {
-                        HapticFeedback.lightImpact();
+                        ExposureState.hapticLight();
                         final newVal = !_compactMode;
                         setState(() => _compactMode = newVal);
                         final prefs = await SharedPreferences.getInstance();
@@ -2135,48 +2449,41 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       );
     }
 
-    final sortedEntries = List<LogEntry>.from(_entries);
-    if (_sortOrder == LogbookSortOrder.dateDescending) {
-      sortedEntries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } else if (_sortOrder == LogbookSortOrder.dateAscending) {
-      sortedEntries.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    } else if (_sortOrder == LogbookSortOrder.titleAZ) {
-      sortedEntries.sort((a, b) {
-        final titleA = a.title.trim().isEmpty ? (a.filmName ?? '') : a.title;
-        final titleB = b.title.trim().isEmpty ? (b.filmName ?? '') : b.title;
-        return titleA.toLowerCase().compareTo(titleB.toLowerCase());
-      });
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-      itemCount: sortedEntries.length,
-      itemBuilder: (context, i) {
-        final entry = sortedEntries[i];
-        Offset tapPosition = Offset.zero;
-        return RepaintBoundary(
-          key: ValueKey('${entry.id}_${_compactMode}_folder_detail'),
-          child: GestureDetector(
+    return PageTransitionSwitcher(
+      duration: const Duration(milliseconds: 400),
+      transitionBuilder: (child, primaryAnimation, secondaryAnimation) {
+        return FadeThroughTransition(
+          animation: primaryAnimation,
+          secondaryAnimation: secondaryAnimation,
+          child: child,
+        );
+      },
+      child: ListView.builder(
+        key: ValueKey(_compactMode),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        itemCount: _sortedEntries.length,
+        itemBuilder: (context, i) {
+          final entry = _sortedEntries[i];
+          Offset tapPosition = Offset.zero;
+          return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (details) {
               tapPosition = details.globalPosition;
             },
-            onLongPress: () {
-              HapticFeedback.mediumImpact();
-              _showContextMenu(context, entry, tapPosition);
-            },
-            child: _compactMode
-                ? _CompactListRow(
-                    entry: entry,
-                    onTap: () => _openDetail(entry),
-                  )
-                : _PolaroidCard(
-                    entry: entry,
-                    onTap: () => _openDetail(entry),
-                  ),
-          ),
-        );
-      },
+            child: _LogEntryContainer(
+              entry: entry,
+              compactMode: _compactMode,
+              isDark: isDark,
+              onClosed: () {
+                if (mounted) _load();
+              },
+              onLongPress: (triggerEdit) {
+                _showContextMenu(context, entry, tapPosition, onEdit: triggerEdit);
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 }

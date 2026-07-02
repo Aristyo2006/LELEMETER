@@ -113,6 +113,8 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
+  static bool globalHapticsEnabled = true;
+
   bool _hapticsEnabled = true;
   bool get hapticsEnabled => _hapticsEnabled;
 
@@ -157,6 +159,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
 
   void toggleHaptics() {
     _hapticsEnabled = !_hapticsEnabled;
+    globalHapticsEnabled = _hapticsEnabled;
     _prefs.setBool('hapticsEnabled', _hapticsEnabled);
     _triggerHaptic();
     notifyListeners();
@@ -324,6 +327,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     }
     _themeMode = ThemeMode.values.firstWhere((e) => e.name == themeStr, orElse: () => ThemeMode.system);
     _hapticsEnabled = _prefs.getBool('hapticsEnabled') ?? true;
+    globalHapticsEnabled = _hapticsEnabled;
     _useHalfSteps = _prefs.getBool('useHalfSteps') ?? false;
     _isPureBlack = _prefs.getBool('isPureBlack') ?? true;
     _hideStatusBar = _prefs.getBool('hideStatusBar') ?? false;
@@ -424,6 +428,7 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
 
         if (!_isLocked) {
           double newLux = luxValue.toDouble();
+          if (newLux == _currentLux) return;
           
           // Throttling: Only update if value changed significantly OR 100ms passed
           final now = DateTime.now();
@@ -673,5 +678,23 @@ class ExposureState extends ChangeNotifier with WidgetsBindingObserver {
     _batteryStateSubscription?.cancel();
     _batteryTimer?.cancel();
     super.dispose();
+  }
+
+  static void hapticLight() {
+    if (globalHapticsEnabled) {
+      HapticFeedback.lightImpact();
+    }
+  }
+
+  static void hapticMedium() {
+    if (globalHapticsEnabled) {
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  static void hapticSelection() {
+    if (globalHapticsEnabled) {
+      HapticFeedback.selectionClick();
+    }
   }
 }

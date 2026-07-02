@@ -52,6 +52,8 @@ dependencies:
   gal: ^2.3.1               # save exported image to the system gallery
   image: ^4.5.4             # bake film-sim color matrix onto a captured JPEG (isolate)
   path: ^1.9.0               # path manipulation for store file paths
+  page_transition: ^2.2.2
+  animations: ^2.2.0
 
 dev_dependencies:
   flutter_test:

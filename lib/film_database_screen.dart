@@ -1154,7 +1154,11 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                             onTap: () {
                               state.selectFilm(film);
                               Navigator.pop(ctx);
-                              Navigator.pop(context);
+                              Future.delayed(Duration.zero, () {
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                }
+                              });
                             },
                             child: Container(
                               height: 40,
@@ -1382,7 +1386,11 @@ class _FilmDatabaseScreenState extends State<FilmDatabaseScreen> with SingleTick
                                   state.selectFilm(film);
                                   // Use the direct navigator to pop both dialog and screen
                                   Navigator.of(ctx).pop();
-                                  Navigator.of(context).pop();
+                                  Future.delayed(Duration.zero, () {
+                                    if (context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  });
                                 },
                                 child: Container(
                                   height: 48,

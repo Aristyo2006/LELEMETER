@@ -19,7 +19,7 @@ class AnalogViewfinderScreen extends StatefulWidget {
   State<AnalogViewfinderScreen> createState() => _AnalogViewfinderScreenState();
 }
 
-class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with WidgetsBindingObserver {
+class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   MethodChannel? _methodChannel;
   StreamSubscription? _eventSubscription;
 
@@ -44,10 +44,15 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
 
   // ── Logbook capture ──
   bool _capturing = false; // shows overlay while native capture + film-sim bake run
+  late AnimationController _shutterController;
 
   @override
   void initState() {
     super.initState();
+    _shutterController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _exposureState.setUsingCameraSensor(true);
@@ -80,6 +85,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     _exposureState.setUsingCameraSensor(false);
     Future.delayed(const Duration(milliseconds: 300), _exposureState.reinitializeSensor);
     _histogramNotifier.dispose();
+    _shutterController.dispose();
     super.dispose();
   }
 
@@ -96,7 +102,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       _meterPoint = null;
       _isSpotMetering = false;
     });
-    HapticFeedback.mediumImpact();
+    ExposureState.hapticMedium();
   }
 
   void _onPlatformViewCreated(int id) {
@@ -128,7 +134,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
   void _toggleBW() {
     setState(() => _bwMode = !_bwMode);
     _methodChannel?.invokeMethod('setBlackAndWhite', {'enabled': _bwMode});
-    HapticFeedback.lightImpact();
+    ExposureState.hapticLight();
   }
 
   // void _toggleLivePreview() {
@@ -153,7 +159,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       _methodChannel?.invokeMethod('lockAE', {'baseEV': ev});
       setState(() => _isAELocked = true);
     }
-    HapticFeedback.mediumImpact();
+    ExposureState.hapticMedium();
   }
 
   /// Capture a still frame for the Logbook. Reads the *current* exposure
@@ -161,8 +167,11 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
   /// the LogCreator. Does not modify any metering/EV state.
   Future<void> _captureForLog() async {
     if (_capturing || _methodChannel == null) return;
-    setState(() => _capturing = true);
-    HapticFeedback.mediumImpact();
+    setState(() {
+      _capturing = true;
+    });
+    _shutterController.forward(from: 0.0);
+    ExposureState.hapticMedium();
 
     try {
       // Snapshot the live settings BEFORE navigation so the entry is stable.
@@ -173,6 +182,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
         ev: _exposureState.ev,
         exposureCompensation: _exposureState.exposureCompensation,
         filmName: _exposureState.selectedFilm?.name,
+        focalLength: (24 * _currentZoom).toInt(),
       );
 
       final path = await _methodChannel!.invokeMethod<String>('capturePhoto');
@@ -226,7 +236,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     final dx = details.localPosition.dx / screenSize.width;
     final dy = details.localPosition.dy / screenSize.height;
     _methodChannel!.invokeMethod('setMeteringPoint', {'x': dx, 'y': dy});
-    HapticFeedback.lightImpact();
+    ExposureState.hapticLight();
     setState(() {
       _meterPoint = Offset(dx, dy);
       _isSpotMetering = true;
@@ -336,6 +346,62 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
                         )),
                       ),
                     ),
+                  // Mechanical Shutter Curtains
+                  AnimatedBuilder(
+                    animation: _shutterController,
+                    builder: (context, child) {
+                      final progress = _shutterController.value;
+                      if (progress == 0.0) return const SizedBox.shrink();
+
+                      double fraction;
+                      if (progress <= 0.45) {
+                        fraction = (progress / 0.45) * 0.5;
+                      } else if (progress <= 0.55) {
+                        fraction = 0.5;
+                      } else {
+                        fraction = 0.5 - ((progress - 0.55) / 0.45) * 0.5;
+                      }
+
+                      final curtainHeight = ph * fraction;
+
+                      return Stack(
+                        children: [
+                          // Top curtain
+                          Positioned(
+                            top: 0, left: 0, right: 0,
+                            height: curtainHeight,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F0F11),
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: Colors.grey.withValues(alpha: 0.35),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Bottom curtain
+                          Positioned(
+                            bottom: 0, left: 0, right: 0,
+                            height: curtainHeight,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F0F11),
+                                border: Border(
+                                  top: BorderSide(
+                                    color: Colors.grey.withValues(alpha: 0.35),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ]),
               ),
             ),
@@ -469,8 +535,19 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
           child: Center(child: _shutterButton()),
         ),
 
-        // ── Capture overlay (flash + spinner) ───────────────────────────
-        if (_capturing) Positioned.fill(child: _captureOverlay()),
+
+        // ── Capture spinner overlay ───────────────────────────────────
+        if (_capturing)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.25),
+                child: const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
@@ -675,20 +752,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     );
   }
 
-  /// Full-screen white flash + spinner while capture runs.
-  Widget _captureOverlay() {
-    return IgnorePointer(
-      child: AnimatedOpacity(
-        opacity: 1.0,
-        duration: const Duration(milliseconds: 80),
-        child: Container(
-          color: Colors.white.withValues(alpha: 0.15),
-          alignment: Alignment.center,
-          child: const CircularProgressIndicator(color: Colors.white),
-        ),
-      ),
-    );
-  }
+
 
   Widget _lcdCell(String label, String value, Color lcdC, {bool glow = true}) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
@@ -728,7 +792,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: m != null ? () { HapticFeedback.lightImpact(); m(); } : null,
+              onTap: m != null ? () { ExposureState.hapticLight(); m(); } : null,
               child: Container(
                 width: 48, height: 36,
                 alignment: Alignment.center,
@@ -743,7 +807,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
             )),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: p != null ? () { HapticFeedback.lightImpact(); p(); } : null,
+              onTap: p != null ? () { ExposureState.hapticLight(); p(); } : null,
               child: Container(
                 width: 48, height: 36,
                 alignment: Alignment.center,

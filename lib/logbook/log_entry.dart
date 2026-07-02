@@ -71,6 +71,7 @@ class LogEntry {
   final double ev;
   final double exposureCompensation;
   final String? filmName;
+  final int? focalLength;
 
   LogEntry({
     required this.id,
@@ -89,6 +90,7 @@ class LogEntry {
     required this.ev,
     required this.exposureCompensation,
     this.filmName,
+    this.focalLength,
   });
 
   factory LogEntry.create({
@@ -99,6 +101,7 @@ class LogEntry {
     required double ev,
     required double exposureCompensation,
     String? filmName,
+    int? focalLength,
     String title = '',
     String note = '',
     double? latitude,
@@ -126,6 +129,7 @@ class LogEntry {
       ev: ev,
       exposureCompensation: exposureCompensation,
       filmName: filmName,
+      focalLength: focalLength,
     );
   }
 
@@ -146,6 +150,7 @@ class LogEntry {
         'ev': ev,
         'exposureCompensation': exposureCompensation,
         if (filmName != null) 'filmName': filmName,
+        if (focalLength != null) 'focalLength': focalLength,
       };
 
   factory LogEntry.fromJson(Map<String, dynamic> j) => LogEntry(
@@ -166,22 +171,29 @@ class LogEntry {
         ev: (j['ev'] as num).toDouble(),
         exposureCompensation: (j['exposureCompensation'] as num).toDouble(),
         filmName: j['filmName'] as String?,
+        focalLength: j['focalLength'] as int?,
       );
 
   /// A compact settings string, e.g. "f/2.8 · 1/30 · ISO 400 · EV 12.5".
+  /// A compact settings string, e.g. "58mm · f/2.8 · 1/30 · ISO 400 · EV 12.5".
   static String settingsLine({
     required double shutterSpeed,
     required double aperture,
     required int iso,
     required double ev,
     String? filmName,
+    int? focalLength,
   }) {
-    final parts = <String>[
+    final parts = <String>[];
+    if (focalLength != null) {
+      parts.add('${focalLength}mm');
+    }
+    parts.addAll([
       'f/${aperture.toStringAsFixed(1)}',
       _formatShutter(shutterSpeed),
       'ISO $iso',
       'EV ${ev.toStringAsFixed(1)}',
-    ];
+    ]);
     if (filmName != null && filmName.isNotEmpty) parts.add(filmName);
     return parts.join(' · ');
   }
@@ -198,6 +210,7 @@ class LogEntry {
         iso: iso,
         ev: ev,
         filmName: filmName,
+        focalLength: focalLength,
       );
 }
 
