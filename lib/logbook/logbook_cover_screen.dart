@@ -52,13 +52,17 @@ class _LogbookCoverScreenState extends State<LogbookCoverScreen>
     //   π/2 → π  : fast ease-out, cover snapping behind
     _coverRotation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: math.pi * 0.5)
-            .chain(CurveTween(curve: Curves.easeIn)),
+        tween: Tween<double>(
+          begin: 0.0,
+          end: math.pi * 0.5,
+        ).chain(CurveTween(curve: Curves.easeIn)),
         weight: 50,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: math.pi * 0.5, end: math.pi)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        tween: Tween<double>(
+          begin: math.pi * 0.5,
+          end: math.pi,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 50,
       ),
     ]).animate(_flip);
@@ -152,9 +156,9 @@ class _LogbookCoverScreenState extends State<LogbookCoverScreen>
             const LogbookScreen(),
 
             // The cover — present while _showCover == true.
-            // Rotates the full 0 → π arc without disappearing mid-flip,
-            // so there's never a black gap. Once flip completes we swap
-            // _showCover=false via setState and the cover unmounts.
+            // Two-sided page flip: front (leather + title) shows 0 → π/2,
+            // back (endpaper) shows π/2 → π. This makes the page-turn visually
+            // obvious — without a distinct back face the flip is invisible.
             if (_showCover == true)
               Positioned.fill(
                 child: IgnorePointer(
@@ -168,7 +172,18 @@ class _LogbookCoverScreenState extends State<LogbookCoverScreen>
                         transform: Matrix4.identity()
                           ..setEntry(3, 2, _perspective)
                           ..rotateY(angle),
-                        child: child!,
+                        // Front face while facing camera; endpaper once it
+                        // has flipped past edge-on. The endpaper is pre-
+                        // rotated π so its face points toward the viewer.
+                        child: angle < math.pi / 2
+                            ? child!
+                            : Transform(
+                                alignment: Alignment.center,
+                                transform: Matrix4.identity()..rotateY(math.pi),
+                                child: RepaintBoundary(
+                                  child: const _Endpaper(),
+                                ),
+                              ),
                       );
                     },
                     child: const RepaintBoundary(child: _Cover()),
@@ -231,23 +246,71 @@ class _Cover extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Container(width: 72, height: 1, color: const Color(0x12FFFFFF)),
+                  Container(
+                    width: 72,
+                    height: 1,
+                    color: const Color(0x12FFFFFF),
+                  ),
                 ],
               ),
             ),
           ),
           // Tipped-in paper label (bottom-left)
-          const Positioned(
-            bottom: 120,
-            left: 40,
-            child: _TippedInLabel(),
-          ),
+          const Positioned(bottom: 120, left: 40, child: _TippedInLabel()),
           // Vignette — painted once
           const Positioned.fill(child: IgnorePointer(child: _Vignette())),
         ],
       ),
     );
   }
+}
+
+/// The inside of the book cover — cream marbled "endpaper".
+/// Visually distinct from the leather front so the page-turn reads clearly.
+class _Endpaper extends StatelessWidget {
+  const _Endpaper();
+  @override
+  Widget build(BuildContext context) {
+    return const Material(
+      color: Colors.transparent,
+      child: CustomPaint(painter: _EndpaperPainter()),
+    );
+  }
+}
+
+class _EndpaperPainter extends CustomPainter {
+  const _EndpaperPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Base cream paper.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFF3EAD3),
+    );
+    // Soft top-left light.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.4, -0.4),
+          radius: 0.9,
+          colors: [Colors.white.withValues(alpha: 0.18), Colors.transparent],
+        ).createShader(Offset.zero & size),
+    );
+    // Edge vignette so it blends with the dark backdrop.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = RadialGradient(
+          center: Alignment.center,
+          radius: 0.85,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.28)],
+        ).createShader(Offset.zero & size),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter _) => false;
 }
 
 class _Vignette extends StatelessWidget {
@@ -415,7 +478,10 @@ class _ClosureStrap extends StatelessWidget {
                       height: 18,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(2),
-                        border: Border.all(color: const Color(0x805A4010), width: 1.5),
+                        border: Border.all(
+                          color: const Color(0x805A4010),
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),

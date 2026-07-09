@@ -11,7 +11,7 @@ import 'logbook/logbook_cover_screen.dart';
 import 'ui_helpers.dart';
 import 'camera_viewfinder_screen.dart';
 import 'package:page_transition/page_transition.dart';
-
+import 'package:animations/animations.dart';
 
 class LightMeterScreen extends StatelessWidget {
   const LightMeterScreen({super.key});
@@ -54,8 +54,9 @@ class LightMeterScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       Consumer<ExposureState>(
-                        builder: (context, s, _) =>
-                            RepaintBoundary(child: _buildGlassReadout(context, s)),
+                        builder: (context, s, _) => RepaintBoundary(
+                          child: _buildGlassReadout(context, s),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Selector<ExposureState, bool>(
@@ -561,21 +562,21 @@ class LightMeterScreen extends StatelessWidget {
                   reverseTransitionDuration: const Duration(milliseconds: 300),
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {
-                    return AnimatedBuilder(
-                      animation: animation,
-                      builder: (context, child) {
-                        final irisAnimation = CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeInOutCubic,
-                        );
-                        return ClipPath(
-                          clipper: _IrisRevealClipper(irisAnimation.value),
+                        return AnimatedBuilder(
+                          animation: animation,
+                          builder: (context, child) {
+                            final irisAnimation = CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeInOutCubic,
+                            );
+                            return ClipPath(
+                              clipper: _IrisRevealClipper(irisAnimation.value),
+                              child: child,
+                            );
+                          },
                           child: child,
                         );
                       },
-                      child: child,
-                    );
-                  },
                 ),
               );
             },
@@ -587,9 +588,7 @@ class LightMeterScreen extends StatelessWidget {
             label: isLocked ? 'LOCKED' : 'LOCK SENSOR',
             icon: isLocked ? Icons.lock : Icons.lock_open,
             isActive: isLocked,
-            color: isLocked
-                ? const Color(0xFFFBBC00)
-                : const Color(0xFFE7E5E5),
+            color: isLocked ? const Color(0xFFFBBC00) : const Color(0xFFE7E5E5),
             onTap: () => state.toggleLock(),
           ),
         ),
@@ -1230,85 +1229,94 @@ class LightMeterScreen extends StatelessWidget {
     ExposureState state,
     bool isDark,
   ) {
-    return InkWell(
-      onTap: () {
-        ExposureState.hapticMedium();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const Scaffold(body: FilmDatabaseScreen()),
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF252626) : Colors.white,
-          image: skeuomorphicNoise,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: isDark
-              ? null
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'FILM STOCK',
-                  style: TextStyle(
-                    fontFamily: 'SpaceGrotesk',
-                    fontSize: 10,
-                    color: isDark
-                        ? const Color(0xFFACABAA)
-                        : const Color(0xFF757575),
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  state.selectedFilm?.name.toUpperCase() ?? 'NONE',
-                  style: TextStyle(
-                    fontFamily: 'SpaceGrotesk',
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: state.primaryColor,
-                  ),
-                ),
-              ],
+    return OpenContainer(
+      closedColor: isDark ? const Color(0xFF252626) : Colors.white,
+      closedElevation: 0,
+      closedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      openColor: isDark ? const Color(0xFF0E0E0E) : Colors.white,
+      openElevation: 0,
+      transitionDuration: const Duration(milliseconds: 450),
+      openBuilder: (context, action) =>
+          const Scaffold(body: FilmDatabaseScreen()),
+      closedBuilder: (context, openContainer) {
+        return InkWell(
+          onTap: () {
+            ExposureState.hapticMedium();
+            openContainer();
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF252626) : Colors.white,
+              image: skeuomorphicNoise,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: isDark
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
             ),
-            Row(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                if (state.selectedFilm != null)
-                  IconButton(
-                    icon: Icon(
-                      Icons.close,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'FILM STOCK',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 10,
+                        color: isDark
+                            ? const Color(0xFFACABAA)
+                            : const Color(0xFF757575),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      state.selectedFilm?.name.toUpperCase() ?? 'NONE',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: state.primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (state.selectedFilm != null)
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: isDark
+                              ? const Color(0xFFACABAA)
+                              : const Color(0xFF757575),
+                        ),
+                        onPressed: () => state.selectFilm(null),
+                      ),
+                    Icon(
+                      Icons.camera_roll,
                       color: isDark
                           ? const Color(0xFFACABAA)
                           : const Color(0xFF757575),
                     ),
-                    onPressed: () => state.selectFilm(null),
-                  ),
-                Icon(
-                  Icons.camera_roll,
-                  color: isDark
-                      ? const Color(0xFFACABAA)
-                      : const Color(0xFF757575),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1964,13 +1972,16 @@ class _IrisRevealClipper extends CustomClipper<Path> {
     final path = Path();
     final center = Offset(size.width / 2, size.height / 2);
     // Find half diagonal distance as maximum radius
-    final maxRadius = math.sqrt(size.width * size.width + size.height * size.height);
+    final maxRadius = math.sqrt(
+      size.width * size.width + size.height * size.height,
+    );
     final radius = maxRadius * progress;
-    
+
     path.addOval(Rect.fromCircle(center: center, radius: radius));
     return path;
   }
 
   @override
-  bool shouldReclip(_IrisRevealClipper oldClipper) => oldClipper.progress != progress;
+  bool shouldReclip(_IrisRevealClipper oldClipper) =>
+      oldClipper.progress != progress;
 }

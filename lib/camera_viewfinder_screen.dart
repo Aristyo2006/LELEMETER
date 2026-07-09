@@ -7,11 +7,12 @@ import 'exposure_state.dart';
 import 'exposure_calculator.dart';
 import 'film_database.dart';
 import 'logbook/log_creator_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 // LCD fallback (used as default; actual color comes from state.lcdColor)
 const _lcdGreenDefault = Color(0xFF8EFF71);
 const _lcdAmber = Color(0xFFFBBC00);
-const _lcdBg    = Color(0xFF060E06);
+const _lcdBg = Color(0xFF060E06);
 
 class AnalogViewfinderScreen extends StatefulWidget {
   const AnalogViewfinderScreen({super.key});
@@ -19,13 +20,19 @@ class AnalogViewfinderScreen extends StatefulWidget {
   State<AnalogViewfinderScreen> createState() => _AnalogViewfinderScreenState();
 }
 
-class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   MethodChannel? _methodChannel;
   StreamSubscription? _eventSubscription;
 
   bool _isAELocked = false;
   final ValueNotifier<HistogramData> _histogramNotifier = ValueNotifier(
-    HistogramData(List.filled(256, 0), List.filled(256, 0), List.filled(256, 0), 1),
+    HistogramData(
+      List.filled(256, 0),
+      List.filled(256, 0),
+      List.filled(256, 0),
+      1,
+    ),
   );
 
   Offset? _meterPoint;
@@ -42,8 +49,13 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
   List<double>? _customLutMatrix;
   String? _lastLoadedFilm;
 
+  // ── Permission state ──
+  bool _hasPermission = false;
+  bool _checkingPermission = true;
+
   // ── Logbook capture ──
-  bool _capturing = false; // shows overlay while native capture + film-sim bake run
+  bool _capturing =
+      false; // shows overlay while native capture + film-sim bake run
   late AnimationController _shutterController;
 
   @override
@@ -54,9 +66,31 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       duration: const Duration(milliseconds: 320),
     );
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _exposureState.setUsingCameraSensor(true);
-    });
+    _checkPermission();
+  }
+
+  Future<void> _checkPermission() async {
+    final status = await Permission.camera.status;
+    if (status.isGranted) {
+      if (mounted) {
+        setState(() {
+          _hasPermission = true;
+          _checkingPermission = false;
+        });
+        _exposureState.setUsingCameraSensor(true);
+      }
+    } else {
+      final result = await Permission.camera.request();
+      if (mounted) {
+        setState(() {
+          _hasPermission = result.isGranted;
+          _checkingPermission = false;
+        });
+        if (result.isGranted) {
+          _exposureState.setUsingCameraSensor(true);
+        }
+      }
+    }
   }
 
   @override
@@ -83,7 +117,10 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     WidgetsBinding.instance.removeObserver(this);
     _eventSubscription?.cancel();
     _exposureState.setUsingCameraSensor(false);
-    Future.delayed(const Duration(milliseconds: 300), _exposureState.reinitializeSensor);
+    Future.delayed(
+      const Duration(milliseconds: 300),
+      _exposureState.reinitializeSensor,
+    );
     _histogramNotifier.dispose();
     _shutterController.dispose();
     super.dispose();
@@ -91,7 +128,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && _hasPermission) {
       _methodChannel?.invokeMethod('resumeCamera');
     }
   }
@@ -126,7 +163,12 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       } else {
         final shutterSec = (map['shutterNs'] as int) / 1e9;
         _exposureState.updateExposureFromCamera(
-          ExposureCalculator.calculateSettingsEv(1.8, shutterSec, map['iso'] as int));
+          ExposureCalculator.calculateSettingsEv(
+            1.8,
+            shutterSec,
+            map['iso'] as int,
+          ),
+        );
       }
     });
   }
@@ -197,7 +239,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       if (!mounted) return;
 
       await Navigator.of(context).push(
-        MaterialPageRoute(
+        PolaroidPageRoute(
           builder: (_) => LogCreatorScreen(
             imagePath: path,
             snapshot: snap,
@@ -223,7 +265,6 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
-
   void _setZoom(double z) {
     final clamped = z.clamp(1.0, 5.0);
     if ((clamped - _currentZoom).abs() < 0.001) return;
@@ -245,6 +286,104 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
 
   @override
   Widget build(BuildContext context) {
+    if (_checkingPermission) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    if (!_hasPermission) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Camera Permission Required',
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'LELEMETER needs access to your camera to use the viewfinder and calculate exposure settings.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'SpaceGrotesk',
+                      fontSize: 14,
+                      color: Colors.white60,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  FilledButton(
+                    onPressed: () async {
+                      final status = await Permission.camera.request();
+                      if (status.isGranted) {
+                        if (mounted) {
+                          setState(() {
+                            _hasPermission = true;
+                          });
+                          _exposureState.setUsingCameraSensor(true);
+                        }
+                      } else if (status.isPermanentlyDenied) {
+                        openAppSettings();
+                      }
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF8EFF71),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'GRANT ACCESS',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'GO BACK',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        color: Colors.white30,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final state = context.watch<ExposureState>();
     final screenSize = MediaQuery.of(context).size;
 
@@ -272,290 +411,457 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     final isBWFilm = state.selectedFilm?.type == FilmType.blackWhite;
 
     // Load LUT Matrix if film changed
-    if (state.selectedFilm != null && state.selectedFilm!.name != _lastLoadedFilm) {
+    if (state.selectedFilm != null &&
+        state.selectedFilm!.name != _lastLoadedFilm) {
       _lastLoadedFilm = state.selectedFilm!.name;
       _loadLutMatrix(state.selectedFilm!);
     }
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(children: [
-        // ── Camera + HUD Layer (Filtered together) ─────────────────────
-        Positioned.fromRect(
-          rect: previewRect,
-          child: ClipRect(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (d) => _tapToMeter(d, previewRect.size),
-              onScaleStart: (_) => _lastScaleZoom = _currentZoom,
-              onScaleUpdate: (d) {
-                if (d.pointerCount < 2) return;
-                _setZoom(_lastScaleZoom * d.scale);
-              },
-              child: Stack(children: [
-                // Camera Feed
-                Positioned.fill(
-                  child: _livePreview
-                    ? ColorFiltered(
-                        colorFilter: _filmSimEnabled 
-                            ? (_customLutMatrix != null ? ColorFilter.matrix(_customLutMatrix!) : _getFilmMatrix(state.selectedFilm)) 
-                            : const ColorFilter.matrix([1,0,0,0,0, 0,1,0,0,0, 0,0,1,0,0, 0,0,0,1,0]),
-                        child: AndroidView(
-                          viewType: 'NativeCameraView',
-                          onPlatformViewCreated: _onPlatformViewCreated,
-                          creationParamsCodec: const StandardMessageCodec(),
-                        ),
-                      )
-                    : Container(color: const Color(0xFF0A0A0A),
-                        child: const Center(child: Icon(Icons.videocam_off, color: Colors.white12, size: 48))),
-                ),
-
-                  // HUD Elements (Corners, center spot, etc.)
-                  ..._corners(),
-
-                  // Center spot circle
-                  Center(
-                    child: Container(
-                      width: 56, height: 56,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24, width: 0.5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(child: Container(
-                        width: 4, height: 4,
-                        decoration: const BoxDecoration(color: Colors.white30, shape: BoxShape.circle),
-                      )),
+      body: Stack(
+        children: [
+          // ── Camera + HUD Layer (Filtered together) ─────────────────────
+          Positioned.fromRect(
+            rect: previewRect,
+            child: ClipRect(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (d) => _tapToMeter(d, previewRect.size),
+                onScaleStart: (_) => _lastScaleZoom = _currentZoom,
+                onScaleUpdate: (d) {
+                  if (d.pointerCount < 2) return;
+                  _setZoom(_lastScaleZoom * d.scale);
+                },
+                child: Stack(
+                  children: [
+                    // Camera Feed
+                    Positioned.fill(
+                      child: _livePreview
+                          ? ColorFiltered(
+                              colorFilter: _filmSimEnabled
+                                  ? (_customLutMatrix != null
+                                        ? ColorFilter.matrix(_customLutMatrix!)
+                                        : _getFilmMatrix(state.selectedFilm))
+                                  : const ColorFilter.matrix([
+                                      1,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      1,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      1,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      1,
+                                      0,
+                                    ]),
+                              child: AndroidView(
+                                viewType: 'NativeCameraView',
+                                onPlatformViewCreated: _onPlatformViewCreated,
+                                creationParamsCodec:
+                                    const StandardMessageCodec(),
+                              ),
+                            )
+                          : Container(
+                              color: const Color(0xFF0A0A0A),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.videocam_off,
+                                  color: Colors.white12,
+                                  size: 48,
+                                ),
+                              ),
+                            ),
                     ),
-                  ),
 
-                  // Tap metering indicator
-                  if (_meterPoint != null)
-                    Positioned(
-                      left: _meterPoint!.dx * pw - 22,
-                      top:  _meterPoint!.dy * ph - 22,
+                    // HUD Elements (Corners, center spot, etc.)
+                    ..._corners(),
+
+                    // Center spot circle
+                    Center(
                       child: Container(
-                        width: 44, height: 44,
+                        width: 56,
+                        height: 56,
                         decoration: BoxDecoration(
-                          border: Border.all(color: _lcdGreenDefault, width: 1.5),
+                          border: Border.all(color: Colors.white24, width: 0.5),
                           shape: BoxShape.circle,
-                          boxShadow: [BoxShadow(color: _lcdGreenDefault.withValues(alpha: 0.3), blurRadius: 8)],
                         ),
-                        child: Center(child: Container(
-                          width: 4, height: 4,
-                          decoration: const BoxDecoration(color: _lcdGreenDefault, shape: BoxShape.circle),
-                        )),
+                        child: Center(
+                          child: Container(
+                            width: 4,
+                            height: 4,
+                            decoration: const BoxDecoration(
+                              color: Colors.white30,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  // Mechanical Shutter Curtains
-                  AnimatedBuilder(
-                    animation: _shutterController,
-                    builder: (context, child) {
-                      final progress = _shutterController.value;
-                      if (progress == 0.0) return const SizedBox.shrink();
 
-                      double fraction;
-                      if (progress <= 0.45) {
-                        fraction = (progress / 0.45) * 0.5;
-                      } else if (progress <= 0.55) {
-                        fraction = 0.5;
-                      } else {
-                        fraction = 0.5 - ((progress - 0.55) / 0.45) * 0.5;
-                      }
-
-                      final curtainHeight = ph * fraction;
-
-                      return Stack(
-                        children: [
-                          // Top curtain
-                          Positioned(
-                            top: 0, left: 0, right: 0,
-                            height: curtainHeight,
+                    // Tap metering indicator
+                    if (_meterPoint != null)
+                      Positioned(
+                        left: _meterPoint!.dx * pw - 22,
+                        top: _meterPoint!.dy * ph - 22,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _lcdGreenDefault,
+                              width: 1.5,
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: _lcdGreenDefault.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                          child: Center(
                             child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F0F11),
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: Colors.grey.withValues(alpha: 0.35),
-                                    width: 1.5,
+                              width: 4,
+                              height: 4,
+                              decoration: const BoxDecoration(
+                                color: _lcdGreenDefault,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Mechanical Shutter Curtains
+                    AnimatedBuilder(
+                      animation: _shutterController,
+                      builder: (context, child) {
+                        final progress = _shutterController.value;
+                        if (progress == 0.0) return const SizedBox.shrink();
+
+                        double fraction;
+                        if (progress <= 0.45) {
+                          fraction = (progress / 0.45) * 0.5;
+                        } else if (progress <= 0.55) {
+                          fraction = 0.5;
+                        } else {
+                          fraction = 0.5 - ((progress - 0.55) / 0.45) * 0.5;
+                        }
+
+                        final curtainHeight = ph * fraction;
+
+                        return Stack(
+                          children: [
+                            // Top curtain
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              height: curtainHeight,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F0F11),
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: Colors.grey.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      width: 1.5,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          // Bottom curtain
-                          Positioned(
-                            bottom: 0, left: 0, right: 0,
-                            height: curtainHeight,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F0F11),
-                                border: Border(
-                                  top: BorderSide(
-                                    color: Colors.grey.withValues(alpha: 0.35),
-                                    width: 1.5,
+                            // Bottom curtain
+                            Positioned(
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: curtainHeight,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F0F11),
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.grey.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      width: 1.5,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ]),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
 
-        // ── Histogram ─────────────────────────────────────────────────
-        if (_showHistogram)
+          // ── Histogram ─────────────────────────────────────────────────
+          if (_showHistogram)
+            Positioned(
+              top: pt + 12,
+              left: pl + 12,
+              width: 130,
+              height: 60,
+              child: RepaintBoundary(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: _lcdGreenDefault.withValues(alpha: 0.2),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: ValueListenableBuilder<HistogramData>(
+                      valueListenable: _histogramNotifier,
+                      builder: (context, data, _) {
+                        return CustomPaint(
+                          painter: HistogramPainter(
+                            data.r,
+                            data.g,
+                            data.b,
+                            data.maxVal,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Zoom dial (drag up/down to zoom) ───────────────────────────
           Positioned(
-            top: pt + 12, left: pl + 12, width: 130, height: 60,
+            right: pl + 8,
+            bottom: (screenSize.height - (pt + ph)) + 20,
             child: RepaintBoundary(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _lcdGreenDefault.withValues(alpha: 0.2), width: 0.5),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: ValueListenableBuilder<HistogramData>(
-                    valueListenable: _histogramNotifier,
-                    builder: (context, data, _) {
-                      return CustomPaint(
-                        painter: HistogramPainter(data.r, data.g, data.b, data.maxVal),
-                      );
-                    },
-                  ),
-                ),
+              child: _ZoomDial(
+                zoom: _currentZoom,
+                onDelta: (dz) => _setZoom(_currentZoom + dz),
               ),
             ),
           ),
 
-        // ── Zoom dial (drag up/down to zoom) ───────────────────────────
-        Positioned(
-          right: pl + 8, bottom: (screenSize.height - (pt + ph)) + 20,
-          child: RepaintBoundary(
-            child: _ZoomDial(
-              zoom: _currentZoom,
-              onDelta: (dz) => _setZoom(_currentZoom + dz),
-            ),
-          ),
-        ),
-
-        // ── Top bar ───────────────────────────────────────────────────
-        Positioned(
-          top: 0, left: 0, right: 0,
-          child: RepaintBoundary(
-            child: SafeArea(
-            bottom: false,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              color: Colors.black87,
-              child: Row(children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const Spacer(),
-                if (state.selectedFilm != null)
-                  Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: _lcdAmber, borderRadius: BorderRadius.circular(4)),
-                    child: Row(children: [
-                      const Icon(Icons.camera_roll_outlined, size: 10, color: Colors.black),
-                      const SizedBox(width: 4),
-                      Text(state.selectedFilm!.name.toUpperCase(),
-                        style: const TextStyle(fontFamily: 'SpaceGrotesk', fontSize: 9,
-                          fontWeight: FontWeight.bold, color: Colors.black)),
-                      if (_bwMode) ...[
-                        const SizedBox(width: 6),
+          // ── Top bar ───────────────────────────────────────────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: RepaintBoundary(
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  color: Colors.black87,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      const Spacer(),
+                      if (state.selectedFilm != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(2)),
-                          child: const Text("B/W", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _lcdAmber,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.camera_roll_outlined,
+                                size: 10,
+                                color: Colors.black,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                state.selectedFilm!.name.toUpperCase(),
+                                style: const TextStyle(
+                                  fontFamily: 'SpaceGrotesk',
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              if (_bwMode) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                  child: const Text(
+                                    "B/W",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      if (state.selectedFilm != null) ...[
+                        _topBtn(
+                          icon: Icons.movie_filter,
+                          color: _filmSimEnabled
+                              ? Colors.white
+                              : Colors.white38,
+                          label: 'SIM',
+                          active: _filmSimEnabled,
+                          onTap: () => setState(
+                            () => _filmSimEnabled = !_filmSimEnabled,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                      ],
+                      _topBtn(
+                        icon: _isAELocked ? Icons.lock : Icons.lock_open,
+                        color: _isAELocked ? _lcdAmber : Colors.white54,
+                        label: 'AE-L',
+                        active: _isAELocked,
+                        onTap: _toggleLock,
+                      ),
+                      const SizedBox(width: 2),
+                      _topBtn(
+                        icon: _isSpotMetering
+                            ? Icons.filter_center_focus
+                            : Icons.filter_none,
+                        color: Colors.white54,
+                        label: _isSpotMetering ? 'SPOT' : 'MATR',
+                        active: _isSpotMetering,
+                        onTap: () {
+                          if (_isSpotMetering) {
+                            _resetFocus();
+                          } else {
+                            _tapToMeter(
+                              TapDownDetails(
+                                localPosition: Offset(pw / 2, ph / 2),
+                              ),
+                              previewRect.size,
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 2),
+                      _topBtn(
+                        icon: _showHistogram
+                            ? Icons.bar_chart
+                            : Icons.bar_chart_outlined,
+                        color: Colors.white54,
+                        label: 'HIST',
+                        active: _showHistogram,
+                        onTap: () =>
+                            setState(() => _showHistogram = !_showHistogram),
+                      ),
+                      if (isBWFilm) ...[
+                        // B&W toggle only for B&W film
+                        const SizedBox(width: 2),
+                        _topBtn(
+                          icon: Icons.tonality,
+                          color: _bwMode ? Colors.white : Colors.white38,
+                          label: 'B&W',
+                          active: _bwMode,
+                          onTap: _toggleBW,
                         ),
                       ],
-                    ]),
+                    ],
                   ),
-                if (state.selectedFilm != null) ...[
-                  _topBtn(icon: Icons.movie_filter, color: _filmSimEnabled ? Colors.white : Colors.white38,
-                    label: 'SIM', active: _filmSimEnabled, onTap: () => setState(() => _filmSimEnabled = !_filmSimEnabled)),
-                  const SizedBox(width: 2),
-                ],
-                _topBtn(icon: _isAELocked ? Icons.lock : Icons.lock_open,
-                  color: _isAELocked ? _lcdAmber : Colors.white54,
-                  label: 'AE-L', active: _isAELocked, onTap: _toggleLock),
-                const SizedBox(width: 2),
-                _topBtn(icon: _isSpotMetering ? Icons.filter_center_focus : Icons.filter_none,
-                  color: Colors.white54, label: _isSpotMetering ? 'SPOT' : 'MATR', 
-                  active: _isSpotMetering, onTap: () {
-                    if (_isSpotMetering) {
-                      _resetFocus();
-                    } else {
-                      _tapToMeter(TapDownDetails(localPosition: Offset(pw/2, ph/2)), previewRect.size);
-                    }
-                  }),
-                const SizedBox(width: 2),
-                _topBtn(icon: _showHistogram ? Icons.bar_chart : Icons.bar_chart_outlined,
-                  color: Colors.white54, label: 'HIST', active: _showHistogram,
-                  onTap: () => setState(() => _showHistogram = !_showHistogram)),
-                if (isBWFilm) ...[    // B&W toggle only for B&W film
-                  const SizedBox(width: 2),
-                  _topBtn(icon: Icons.tonality, color: _bwMode ? Colors.white : Colors.white38,
-                    label: 'B&W', active: _bwMode, onTap: _toggleBW),
-                ],
-              ]),
-            ),
-          ),
-        ),
-      ),
-
-        // ── EV Bar (left side, vertical, small) ──
-        Positioned(
-          left: pl, top: pt + 40, bottom: (screenSize.height - (pt + ph)) + 40,
-          child: RepaintBoundary(
-            child: _evSideBar(state, state.lcdColor),
-          ),
-        ),
-
-        // ── Bottom HUD ─────────────────────────────────────────────────
-        Positioned(
-          bottom: 0, left: 0, right: 0,
-          child: SafeArea(top: false, child: RepaintBoundary(child: _buildHUD(state))),
-        ),
-
-        // ── Shutter (Logbook capture) ───────────────────────────────────
-        Positioned(
-          bottom: screenSize.height * 0.30,
-          left: 0,
-          right: 0,
-          child: Center(child: _shutterButton()),
-        ),
-
-
-        // ── Capture spinner overlay ───────────────────────────────────
-        if (_capturing)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.25),
-                child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
                 ),
               ),
             ),
           ),
-      ]),
+
+          // ── EV Bar (left side, vertical, small) ──
+          Positioned(
+            left: pl,
+            top: pt + 40,
+            bottom: (screenSize.height - (pt + ph)) + 40,
+            child: RepaintBoundary(child: _evSideBar(state, state.lcdColor)),
+          ),
+
+          // ── Bottom HUD ─────────────────────────────────────────────────
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              top: false,
+              child: RepaintBoundary(child: _buildHUD(state)),
+            ),
+          ),
+
+          // ── Shutter (Logbook capture) ───────────────────────────────────
+          Positioned(
+            bottom: screenSize.height * 0.30,
+            left: 0,
+            right: 0,
+            child: Center(child: _shutterButton()),
+          ),
+
+          // ── Capture spinner overlay ───────────────────────────────────
+          if (_capturing)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   // ── Builders ────────────────────────────────────────────────────────
 
-  Widget _topBtn({required IconData icon, required Color color, required String label,
-      required bool active, required VoidCallback onTap}) {
+  Widget _topBtn({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -563,87 +869,141 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
         decoration: BoxDecoration(
           color: active ? color.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: active ? color.withValues(alpha: 0.5) : Colors.transparent, width: 0.5),
+          border: Border.all(
+            color: active ? color.withValues(alpha: 0.5) : Colors.transparent,
+            width: 0.5,
+          ),
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: color, size: 17),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontFamily: 'VT323', fontSize: 9, color: color, letterSpacing: 1)),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 17),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'VT323',
+                fontSize: 9,
+                color: color,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _evSideBar(ExposureState state, Color lcdC) {
     // p=0 means +3 EV (top), p=1 means -3 EV (bottom)
-    final double p = 1.0 - ((state.exposureCompensation.clamp(-3.0, 3.0) + 3.0) / 6.0);
+    final double p =
+        1.0 - ((state.exposureCompensation.clamp(-3.0, 3.0) + 3.0) / 6.0);
     final c = _isAELocked ? _lcdAmber : lcdC;
     return Container(
       width: 22,
       decoration: BoxDecoration(
         color: _lcdBg.withValues(alpha: 0.90),
         borderRadius: const BorderRadius.only(
-          topRight: Radius.circular(4), bottomRight: Radius.circular(4)),
+          topRight: Radius.circular(4),
+          bottomRight: Radius.circular(4),
+        ),
         border: Border.all(color: c.withValues(alpha: 0.25), width: 0.5),
       ),
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 3),
-          child: Text('EV', style: TextStyle(fontFamily: 'VT323', fontSize: 7, color: c.withValues(alpha: 0.5))),
-        ),
-        Expanded(
-          child: LayoutBuilder(builder: (_, cs) {
-            final h = cs.maxHeight - 12; // 6px padding top/bottom
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Stack(children: [
-                // Center track
-                Center(child: Container(
-                  width: 1, height: h,
-                  color: c.withValues(alpha: 0.12))),
-                // 7 tick marks with label
-                ...List.generate(7, (i) {
-                  final yFrac = i / 6.0;
-                  final isCenter = i == 3;
-                  return Positioned(
-                    top: (yFrac * h).clamp(0, h),
-                    left: 0, right: 0,
-                    child: Center(
-                      child: Container(width: isCenter ? 7 : 4, height: 1.2,
-                        color: c.withValues(alpha: isCenter ? 0.7 : 0.4)),
-                    ),
-                  );
-                }),
-                // Small label overlay (moved to avoid clipping)
-                ...List.generate(7, (i) {
-                  final yFrac = i / 6.0;
-                  final label = ['+3','+2','+1','0','-1','-2','-3'][i];
-                  return Positioned(
-                    top: (yFrac * h) - 4,
-                    right: 2,
-                    child: Text(label, style: TextStyle(fontFamily: 'VT323', fontSize: 6, color: c.withValues(alpha: 0.4))),
-                  );
-                }),
-                // Animated needle (small horizontal bar)
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 80),
-                  top: (p * h - 1).clamp(0, h - 2),
-                  left: 3, right: 7, // Thinner needle
-                  child: Container(
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: c,
-                      borderRadius: BorderRadius.circular(1),
-                      boxShadow: [BoxShadow(color: c, blurRadius: 4)],
-                    ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              'EV',
+              style: TextStyle(
+                fontFamily: 'VT323',
+                fontSize: 7,
+                color: c.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (_, cs) {
+                final h = cs.maxHeight - 12; // 6px padding top/bottom
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Stack(
+                    children: [
+                      // Center track
+                      Center(
+                        child: Container(
+                          width: 1,
+                          height: h,
+                          color: c.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      // 7 tick marks with label
+                      ...List.generate(7, (i) {
+                        final yFrac = i / 6.0;
+                        final isCenter = i == 3;
+                        return Positioned(
+                          top: (yFrac * h).clamp(0, h),
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Container(
+                              width: isCenter ? 7 : 4,
+                              height: 1.2,
+                              color: c.withValues(alpha: isCenter ? 0.7 : 0.4),
+                            ),
+                          ),
+                        );
+                      }),
+                      // Small label overlay (moved to avoid clipping)
+                      ...List.generate(7, (i) {
+                        final yFrac = i / 6.0;
+                        final label = [
+                          '+3',
+                          '+2',
+                          '+1',
+                          '0',
+                          '-1',
+                          '-2',
+                          '-3',
+                        ][i];
+                        return Positioned(
+                          top: (yFrac * h) - 4,
+                          right: 2,
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontFamily: 'VT323',
+                              fontSize: 6,
+                              color: c.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        );
+                      }),
+                      // Animated needle (small horizontal bar)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 80),
+                        top: (p * h - 1).clamp(0, h - 2),
+                        left: 3,
+                        right: 7, // Thinner needle
+                        child: Container(
+                          height: 2,
+                          decoration: BoxDecoration(
+                            color: c,
+                            borderRadius: BorderRadius.circular(1),
+                            boxShadow: [BoxShadow(color: c, blurRadius: 4)],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ]),
-            );
-          }),
-        ),
-        const SizedBox(height: 3),
-      ]),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 3),
+        ],
+      ),
     );
   }
 
@@ -653,73 +1013,206 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     const t = 1.5;
     const p = 18.0;
     return [
-      Positioned(top: p, left: p, child: SizedBox(width: len, height: len,
-        child: CustomPaint(painter: _CornerPainter(Alignment.topLeft, c, t)))),
-      Positioned(top: p, right: p, child: SizedBox(width: len, height: len,
-        child: CustomPaint(painter: _CornerPainter(Alignment.topRight, c, t)))),
-      Positioned(bottom: 260, left: p, child: SizedBox(width: len, height: len,
-        child: CustomPaint(painter: _CornerPainter(Alignment.bottomLeft, c, t)))),
-      Positioned(bottom: 260, right: p, child: SizedBox(width: len, height: len,
-        child: CustomPaint(painter: _CornerPainter(Alignment.bottomRight, c, t)))),
+      Positioned(
+        top: p,
+        left: p,
+        child: SizedBox(
+          width: len,
+          height: len,
+          child: CustomPaint(painter: _CornerPainter(Alignment.topLeft, c, t)),
+        ),
+      ),
+      Positioned(
+        top: p,
+        right: p,
+        child: SizedBox(
+          width: len,
+          height: len,
+          child: CustomPaint(painter: _CornerPainter(Alignment.topRight, c, t)),
+        ),
+      ),
+      Positioned(
+        bottom: 260,
+        left: p,
+        child: SizedBox(
+          width: len,
+          height: len,
+          child: CustomPaint(
+            painter: _CornerPainter(Alignment.bottomLeft, c, t),
+          ),
+        ),
+      ),
+      Positioned(
+        bottom: 260,
+        right: p,
+        child: SizedBox(
+          width: len,
+          height: len,
+          child: CustomPaint(
+            painter: _CornerPainter(Alignment.bottomRight, c, t),
+          ),
+        ),
+      ),
     ];
   }
 
-
   Widget _buildHUD(ExposureState state) {
     final apertLocked = state.target == CalculationTarget.aperture;
-    final isoLocked   = state.target == CalculationTarget.iso || state.selectedFilm != null;
-    final shutLocked  = state.target == CalculationTarget.shutter || state.fpsOption != null;
+    final isoLocked =
+        state.target == CalculationTarget.iso || state.selectedFilm != null;
+    final shutLocked =
+        state.target == CalculationTarget.shutter || state.fpsOption != null;
 
     return Container(
       color: Colors.black,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // LCD strip — Pure T / F/ / ISO / EV
+          Container(
+            color: _lcdBg,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _lcdCell(
+                  'T',
+                  ExposureCalculator.formatShutterSpeed(state.shutterSpeed),
+                  state.lcdColor,
+                ),
+                _divider(state.lcdColor),
+                _lcdCell(
+                  'F/',
+                  state.aperture.toStringAsFixed(1),
+                  state.lcdColor,
+                ),
+                _divider(state.lcdColor),
+                _lcdCell('ISO', '${state.iso}', state.lcdColor),
+                _divider(state.lcdColor),
+                _lcdCell(
+                  'EV',
+                  state.ev.toStringAsFixed(1),
+                  _isAELocked ? _lcdAmber : state.lcdColor,
+                  glow: true,
+                ),
+              ],
+            ),
+          ),
 
-        // LCD strip — Pure T / F/ / ISO / EV
-        Container(
-          color: _lcdBg,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _lcdCell('T',   ExposureCalculator.formatShutterSpeed(state.shutterSpeed), state.lcdColor),
-            _divider(state.lcdColor),
-            _lcdCell('F/', state.aperture.toStringAsFixed(1), state.lcdColor),
-            _divider(state.lcdColor),
-            _lcdCell('ISO', '${state.iso}', state.lcdColor),
-            _divider(state.lcdColor),
-            _lcdCell('EV',  state.ev.toStringAsFixed(1),
-              _isAELocked ? _lcdAmber : state.lcdColor, glow: true),
-          ]),
-        ),
-
-        // Control blocks
-        Container(
-          color: const Color(0xFF0A0A0A),
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              Expanded(child: _ctrl('F/ APERTURE', state.aperture.toStringAsFixed(1), Colors.white, apertLocked,
-                m: apertLocked ? null : () => _step(ExposureCalculator.apertureValues, state.aperture, -1, state.setAperture),
-                p: apertLocked ? null : () => _step(ExposureCalculator.apertureValues, state.aperture,  1, state.setAperture))),
-              const SizedBox(width: 8),
-              Expanded(child: _ctrl('ISO', '${state.iso}', Colors.white, isoLocked,
-                m: isoLocked ? null : () => _stepInt(ExposureCalculator.isoValues, state.iso, -1, state.setIso),
-                p: isoLocked ? null : () => _stepInt(ExposureCalculator.isoValues, state.iso,  1, state.setIso))),
-            ]),
-            const SizedBox(height: 7),
-            Row(children: [
-              Expanded(child: _ctrl('SEC SHUTTER', ExposureCalculator.formatShutterSpeed(state.shutterSpeed), const Color(0xFFEE7D77), shutLocked,
-                m: shutLocked ? null : () => _step(ExposureCalculator.shutterValues, state.shutterSpeed, -1, state.setShutterSpeed),
-                p: shutLocked ? null : () => _step(ExposureCalculator.shutterValues, state.shutterSpeed,  1, state.setShutterSpeed))),
-              const SizedBox(width: 8),
-              // EV Comp block
-              Expanded(child: _ctrl('EV COMP',
-                '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)}',
-                state.exposureCompensation != 0 ? state.lcdColor : Colors.white, false,
-                m: () => state.setExposureCompensation(state.exposureCompensation - 0.3),
-                p: () => state.setExposureCompensation(state.exposureCompensation + 0.3))),
-            ]),
-          ]),
-        ),
-      ]),
+          // Control blocks
+          Container(
+            color: const Color(0xFF0A0A0A),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ctrl(
+                        'F/ APERTURE',
+                        state.aperture.toStringAsFixed(1),
+                        Colors.white,
+                        apertLocked,
+                        m: apertLocked
+                            ? null
+                            : () => _step(
+                                ExposureCalculator.apertureValues,
+                                state.aperture,
+                                -1,
+                                state.setAperture,
+                              ),
+                        p: apertLocked
+                            ? null
+                            : () => _step(
+                                ExposureCalculator.apertureValues,
+                                state.aperture,
+                                1,
+                                state.setAperture,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ctrl(
+                        'ISO',
+                        '${state.iso}',
+                        Colors.white,
+                        isoLocked,
+                        m: isoLocked
+                            ? null
+                            : () => _stepInt(
+                                ExposureCalculator.isoValues,
+                                state.iso,
+                                -1,
+                                state.setIso,
+                              ),
+                        p: isoLocked
+                            ? null
+                            : () => _stepInt(
+                                ExposureCalculator.isoValues,
+                                state.iso,
+                                1,
+                                state.setIso,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ctrl(
+                        'SEC SHUTTER',
+                        ExposureCalculator.formatShutterSpeed(
+                          state.shutterSpeed,
+                        ),
+                        const Color(0xFFEE7D77),
+                        shutLocked,
+                        m: shutLocked
+                            ? null
+                            : () => _step(
+                                ExposureCalculator.shutterValues,
+                                state.shutterSpeed,
+                                -1,
+                                state.setShutterSpeed,
+                              ),
+                        p: shutLocked
+                            ? null
+                            : () => _step(
+                                ExposureCalculator.shutterValues,
+                                state.shutterSpeed,
+                                1,
+                                state.setShutterSpeed,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // EV Comp block
+                    Expanded(
+                      child: _ctrl(
+                        'EV COMP',
+                        '${state.exposureCompensation >= 0 ? '+' : ''}${state.exposureCompensation.toStringAsFixed(1)}',
+                        state.exposureCompensation != 0
+                            ? state.lcdColor
+                            : Colors.white,
+                        false,
+                        m: () => state.setExposureCompensation(
+                          state.exposureCompensation - 0.3,
+                        ),
+                        p: () => state.setExposureCompensation(
+                          state.exposureCompensation + 0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -736,7 +1229,10 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
           color: Colors.white,
           border: Border.all(color: Colors.white24, width: 3),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 12),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.6),
+              blurRadius: 12,
+            ),
           ],
         ),
         child: _capturing
@@ -744,7 +1240,10 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
                 child: SizedBox(
                   width: 22,
                   height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.black54,
+                  ),
                 ),
               )
             : const Icon(Icons.camera, color: Colors.black, size: 24),
@@ -752,70 +1251,145 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     );
   }
 
-
-
   Widget _lcdCell(String label, String value, Color lcdC, {bool glow = true}) {
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text(label, style: TextStyle(fontFamily: 'VT323', fontSize: 9,
-        color: lcdC.withValues(alpha: 0.55), letterSpacing: 1)),
-      Text(value, style: TextStyle(
-        fontFamily: 'DSEG14Classic', fontStyle: FontStyle.italic,
-        fontSize: 20, color: lcdC, letterSpacing: 1,
-        shadows: glow ? [Shadow(color: lcdC, blurRadius: 12), Shadow(color: lcdC, blurRadius: 6)] : null,
-      )),
-    ]);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'VT323',
+            fontSize: 9,
+            color: lcdC.withValues(alpha: 0.55),
+            letterSpacing: 1,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontFamily: 'DSEG14Classic',
+            fontStyle: FontStyle.italic,
+            fontSize: 20,
+            color: lcdC,
+            letterSpacing: 1,
+            shadows: glow
+                ? [
+                    Shadow(color: lcdC, blurRadius: 12),
+                    Shadow(color: lcdC, blurRadius: 6),
+                  ]
+                : null,
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _divider(Color lcdC) =>    Container(width: 1, height: 30, color: lcdC.withValues(alpha: 0.15));
+  Widget _divider(Color lcdC) =>
+      Container(width: 1, height: 30, color: lcdC.withValues(alpha: 0.15));
 
-  Widget _ctrl(String label, String value, Color vc, bool locked,
-      {VoidCallback? m, VoidCallback? p}) {
+  Widget _ctrl(
+    String label,
+    String value,
+    Color vc,
+    bool locked, {
+    VoidCallback? m,
+    VoidCallback? p,
+  }) {
     return Container(
       height: 58,
       decoration: BoxDecoration(
         color: locked ? const Color(0xFF141414) : const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: locked ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.08)),
+          color: locked
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 7, 10, 0),
-            child: Row(children: [
-              Text(label, style: const TextStyle(fontFamily: 'VT323', fontSize: 9,
-                color: Color(0xFF9D9E9E), letterSpacing: 1)),
-              if (locked) ...[const SizedBox(width: 4), const Icon(Icons.lock, size: 7, color: _lcdAmber)],
-            ]),
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontFamily: 'VT323',
+                    fontSize: 9,
+                    color: Color(0xFF9D9E9E),
+                    letterSpacing: 1,
+                  ),
+                ),
+                if (locked) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.lock, size: 7, color: _lcdAmber),
+                ],
+              ],
+            ),
           ),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: m != null ? () { ExposureState.hapticLight(); m(); } : null,
-              child: Container(
-                width: 48, height: 36,
-                alignment: Alignment.center,
-                child: Icon(Icons.remove, size: 18,
-                  color: m != null ? Colors.white70 : Colors.white12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: m != null
+                    ? () {
+                        ExposureState.hapticLight();
+                        m();
+                      }
+                    : null,
+                child: Container(
+                  width: 48,
+                  height: 36,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.remove,
+                    size: 18,
+                    color: m != null ? Colors.white70 : Colors.white12,
+                  ),
+                ),
               ),
-            ),
-            Text(value, style: TextStyle(
-              fontFamily: 'DSEG14Classic', fontStyle: FontStyle.italic, fontSize: 16,
-              color: locked ? vc.withValues(alpha: 0.35) : vc,
-              shadows: locked ? null : [Shadow(color: vc.withValues(alpha: 0.5), blurRadius: 8)],
-            )),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: p != null ? () { ExposureState.hapticLight(); p(); } : null,
-              child: Container(
-                width: 48, height: 36,
-                alignment: Alignment.center,
-                child: Icon(Icons.add, size: 18,
-                  color: p != null ? Colors.white70 : Colors.white12),
+              Text(
+                value,
+                style: TextStyle(
+                  fontFamily: 'DSEG14Classic',
+                  fontStyle: FontStyle.italic,
+                  fontSize: 16,
+                  color: locked ? vc.withValues(alpha: 0.35) : vc,
+                  shadows: locked
+                      ? null
+                      : [
+                          Shadow(
+                            color: vc.withValues(alpha: 0.5),
+                            blurRadius: 8,
+                          ),
+                        ],
+                ),
               ),
-            ),
-          ]),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: p != null
+                    ? () {
+                        ExposureState.hapticLight();
+                        p();
+                      }
+                    : null,
+                child: Container(
+                  width: 48,
+                  height: 36,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.add,
+                    size: 18,
+                    color: p != null ? Colors.white70 : Colors.white12,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -829,12 +1403,26 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
   }
 
   void _stepInt(List<int> list, int cur, int d, void Function(int) set) =>
-    _step(list, cur, d, set);
+      _step(list, cur, d, set);
 
   Future<void> _loadLutMatrix(FilmStock film) async {
-    final name = film.name.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
-    final folders = ['bw','colorslide','fujixtransiii','instant_consumer','instant_pro','negative_color','negative_new','negative_old','print',''];
-    
+    final name = film.name
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll('-', '_');
+    final folders = [
+      'bw',
+      'colorslide',
+      'fujixtransiii',
+      'instant_consumer',
+      'instant_pro',
+      'negative_color',
+      'negative_new',
+      'negative_old',
+      'print',
+      '',
+    ];
+
     for (final f in folders) {
       final path = "assets/luts/${f.isEmpty ? '' : '$f/'}$name.cube";
       try {
@@ -846,7 +1434,7 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
           await _methodChannel?.invokeMethod('setLutPath', {'path': path});
           return;
         }
-      } catch (_) {} 
+      } catch (_) {}
     }
     setState(() => _customLutMatrix = null);
   }
@@ -855,14 +1443,18 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     final lines = cubeData.split('\n');
     int size = 0;
     List<List<double>> points = [];
-    
+
     for (var line in lines) {
       line = line.trim();
       if (line.startsWith('LUT_3D_SIZE')) {
         size = int.tryParse(line.split(RegExp(r'\s+'))[1]) ?? 0;
         continue;
       }
-      if (line.isEmpty || line.startsWith('#') || RegExp(r'^[a-zA-Z]').hasMatch(line)) continue;
+      if (line.isEmpty ||
+          line.startsWith('#') ||
+          RegExp(r'^[a-zA-Z]').hasMatch(line)) {
+        continue;
+      }
       final parts = line.split(RegExp(r'\s+')).map(double.tryParse).toList();
       if (parts.length == 3 && parts[0] != null) {
         points.add([parts[0]!, parts[1]!, parts[2]!]);
@@ -872,81 +1464,251 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
     if (size < 2 || points.length < size * size * size) return null;
 
     final black = points[0];
-    final red   = points[size - 1];
+    final red = points[size - 1];
     final green = points[(size - 1) * size];
-    final blue  = points[(size - 1) * size * size];
+    final blue = points[(size - 1) * size * size];
 
     return [
-      (red[0] - black[0]), (green[0] - black[0]), (blue[0] - black[0]), 0.0, black[0] * 255,
-      (red[1] - black[1]), (green[1] - black[1]), (blue[1] - black[1]), 0.0, black[1] * 255,
-      (red[2] - black[2]), (green[2] - black[2]), (blue[2] - black[2]), 0.0, black[2] * 255,
-      0.0, 0.0, 0.0, 1.0, 0.0,
+      (red[0] - black[0]),
+      (green[0] - black[0]),
+      (blue[0] - black[0]),
+      0.0,
+      black[0] * 255,
+      (red[1] - black[1]),
+      (green[1] - black[1]),
+      (blue[1] - black[1]),
+      0.0,
+      black[1] * 255,
+      (red[2] - black[2]),
+      (green[2] - black[2]),
+      (blue[2] - black[2]),
+      0.0,
+      black[2] * 255,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
     ];
   }
 
   ColorFilter _getFilmMatrix(FilmStock? film) {
     if (film == null) return _identityMatrix();
-    
+
     final name = film.name.toLowerCase();
-    
+
     if (film.type == FilmType.blackWhite) {
       if (name.contains("tri-x")) {
         return const ColorFilter.matrix([
-          0.3, 0.7, 0.1, 0, -20,
-          0.3, 0.7, 0.1, 0, -20,
-          0.3, 0.7, 0.1, 0, -20,
-          0,   0,   0,   1, 0,
+          0.3,
+          0.7,
+          0.1,
+          0,
+          -20,
+          0.3,
+          0.7,
+          0.1,
+          0,
+          -20,
+          0.3,
+          0.7,
+          0.1,
+          0,
+          -20,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       }
       return const ColorFilter.matrix([
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0,      0,      0,      1, 0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     }
 
     if (name.contains("portra")) {
       return const ColorFilter.matrix([
-        1.1, 0.0, 0.0, 0, 5,
-        0.0, 1.0, 0.0, 0, 2,
-        0.0, 0.0, 0.95, 0, -2,
-        0,   0,   0,   1, 0,
+        1.1,
+        0.0,
+        0.0,
+        0,
+        5,
+        0.0,
+        1.0,
+        0.0,
+        0,
+        2,
+        0.0,
+        0.0,
+        0.95,
+        0,
+        -2,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     } else if (name.contains("gold")) {
       return const ColorFilter.matrix([
-        1.2, 0.0, 0.0, 0, 10,
-        0.0, 1.1, 0.0, 0, 5,
-        0.0, 0.0, 0.8, 0, -10,
-        0,   0,   0,   1, 0,
+        1.2,
+        0.0,
+        0.0,
+        0,
+        10,
+        0.0,
+        1.1,
+        0.0,
+        0,
+        5,
+        0.0,
+        0.0,
+        0.8,
+        0,
+        -10,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     } else if (name.contains("ektar")) {
       return const ColorFilter.matrix([
-        1.15, 0.05, 0.05, 0, 0,
-        0.0,  1.15, 0.0,  0, 0,
-        0.0,  0.0,  1.15, 0, 0,
-        0,    0,    0,    1, 0,
+        1.15,
+        0.05,
+        0.05,
+        0,
+        0,
+        0.0,
+        1.15,
+        0.0,
+        0,
+        0,
+        0.0,
+        0.0,
+        1.15,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     } else if (name.contains("velvia")) {
       return const ColorFilter.matrix([
-        1.0, 0.0, 0.0, 0, 0,
-        0.1, 1.2, 0.0, 0, 5,
-        0.0, 0.1, 1.2, 0, 5,
-        0,   0,   0,   1, 0,
+        1.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        0.1,
+        1.2,
+        0.0,
+        0,
+        5,
+        0.0,
+        0.1,
+        1.2,
+        0,
+        5,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     } else if (name.contains("cinestill") || name.contains("vision3")) {
       return const ColorFilter.matrix([
-        1.0, 0.0, 0.0, 0, 0,
-        0.0, 0.9, 0.2, 0, -5,
-        0.1, 0.0, 1.2, 0, 10,
-        0,   0,   0,   1, 0,
+        1.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        0.0,
+        0.9,
+        0.2,
+        0,
+        -5,
+        0.1,
+        0.0,
+        1.2,
+        0,
+        10,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     }
 
     if (film.brand == "Kodak") {
-      return const ColorFilter.matrix([1.1, 0.05, 0, 0, 5, 0, 1.05, 0, 0, 0, 0, 0, 0.9, 0, 0, 0, 0, 0, 1, 0]);
+      return const ColorFilter.matrix([
+        1.1,
+        0.05,
+        0,
+        0,
+        5,
+        0,
+        1.05,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]);
     } else if (film.brand == "Fujifilm") {
-      return const ColorFilter.matrix([0.95, 0, 0, 0, 0, 0, 1.1, 0.05, 0, 0, 0, 0.05, 1.1, 0, 0, 0, 0, 0, 1, 0]);
+      return const ColorFilter.matrix([
+        0.95,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1.1,
+        0.05,
+        0,
+        0,
+        0,
+        0.05,
+        1.1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]);
     }
 
     return _identityMatrix();
@@ -954,10 +1716,26 @@ class _AnalogViewfinderScreenState extends State<AnalogViewfinderScreen> with Wi
 
   ColorFilter _identityMatrix() {
     return const ColorFilter.matrix([
-      1, 0, 0, 0, 0,
-      0, 1, 0, 0, 0,
-      0, 0, 1, 0, 0,
-      0, 0, 0, 1, 0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ]);
   }
 }
@@ -976,27 +1754,52 @@ class _ZoomDial extends StatelessWidget {
       onVerticalDragUpdate: (d) => onDelta(d.delta.dy * -0.025),
       onHorizontalDragUpdate: (d) => onDelta(d.delta.dx * 0.025),
       child: Container(
-        width: sz, height: sz,
+        width: sz,
+        height: sz,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: const Color(0xFF111111),
           border: Border.all(color: Colors.white24, width: 1),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 10),
-            BoxShadow(color: _lcdGreenDefault.withValues(alpha: 0.08), blurRadius: 16),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.7),
+              blurRadius: 10,
+            ),
+            BoxShadow(
+              color: _lcdGreenDefault.withValues(alpha: 0.08),
+              blurRadius: 16,
+            ),
           ],
         ),
-        child: Stack(alignment: Alignment.center, children: [
-          CustomPaint(size: const Size(sz, sz), painter: _DialPainter(zoom)),
-          Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('${(24 * zoom).toInt()}', style: const TextStyle(
-              fontFamily: 'DSEG14Classic', fontStyle: FontStyle.italic,
-              fontSize: 16, color: _lcdGreenDefault,
-              shadows: [Shadow(color: _lcdGreenDefault, blurRadius: 10)],
-            )),
-            const Text('mm', style: TextStyle(fontFamily: 'VT323', fontSize: 9, color: Colors.white38)),
-          ]),
-        ]),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(size: const Size(sz, sz), painter: _DialPainter(zoom)),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${(24 * zoom).toInt()}',
+                  style: const TextStyle(
+                    fontFamily: 'DSEG14Classic',
+                    fontStyle: FontStyle.italic,
+                    fontSize: 16,
+                    color: _lcdGreenDefault,
+                    shadows: [Shadow(color: _lcdGreenDefault, blurRadius: 10)],
+                  ),
+                ),
+                const Text(
+                  'mm',
+                  style: TextStyle(
+                    fontFamily: 'VT323',
+                    fontSize: 9,
+                    color: Colors.white38,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1007,16 +1810,22 @@ class _DialPainter extends CustomPainter {
   _DialPainter(this.zoom);
   @override
   void paint(Canvas canvas, Size size) {
-    final base  = Paint()..color = Colors.white24..strokeWidth = 1.2..style = PaintingStyle.stroke;
-    final active = Paint()..color = _lcdGreenDefault..strokeWidth = 2.0..style = PaintingStyle.stroke;
+    final base = Paint()
+      ..color = Colors.white24
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    final active = Paint()
+      ..color = _lcdGreenDefault
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
     final c = Offset(size.width / 2, size.height / 2);
     final r = size.width / 2 - 4;
     const n = 24;
     final lit = ((zoom - 1.0) / 4.0 * n).round();
     for (int i = 0; i < n; i++) {
-      final a  = (i / n) * math.pi * 2 - math.pi / 2;
-      final p  = i < lit ? active : base;
-      final l  = i < lit ? 7.0 : 4.0;
+      final a = (i / n) * math.pi * 2 - math.pi / 2;
+      final p = i < lit ? active : base;
+      final l = i < lit ? 7.0 : 4.0;
       canvas.drawLine(
         Offset(c.dx + (r - l) * math.cos(a), c.dy + (r - l) * math.sin(a)),
         Offset(c.dx + r * math.cos(a), c.dy + r * math.sin(a)),
@@ -1024,6 +1833,7 @@ class _DialPainter extends CustomPainter {
       );
     }
   }
+
   @override
   bool shouldRepaint(_DialPainter o) => o.zoom != zoom;
 }
@@ -1036,8 +1846,12 @@ class _CornerPainter extends CustomPainter {
   _CornerPainter(this.corner, this.color, this.thick);
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = color..strokeWidth = thick..style = PaintingStyle.stroke;
-    final w = size.width; final h = size.height;
+    final p = Paint()
+      ..color = color
+      ..strokeWidth = thick
+      ..style = PaintingStyle.stroke;
+    final w = size.width;
+    final h = size.height;
     if (corner == Alignment.topLeft) {
       canvas.drawLine(Offset.zero, Offset(w, 0), p);
       canvas.drawLine(Offset.zero, Offset(0, h), p);
@@ -1052,6 +1866,7 @@ class _CornerPainter extends CustomPainter {
       canvas.drawLine(Offset(w, 0), Offset(w, h), p);
     }
   }
+
   @override
   bool shouldRepaint(_) => false;
 }
@@ -1064,9 +1879,18 @@ class HistogramPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (maxVal == 0) return;
-    final pr = Paint()..color = Colors.red.withValues(alpha: 0.7)..strokeWidth = 1..style = PaintingStyle.stroke;
-    final pg = Paint()..color = const Color(0xFF8EFF71).withValues(alpha: 0.7)..strokeWidth = 1..style = PaintingStyle.stroke;
-    final pb = Paint()..color = Colors.blue.withValues(alpha: 0.7)..strokeWidth = 1..style = PaintingStyle.stroke;
+    final pr = Paint()
+      ..color = Colors.red.withValues(alpha: 0.7)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    final pg = Paint()
+      ..color = const Color(0xFF8EFF71).withValues(alpha: 0.7)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    final pb = Paint()
+      ..color = Colors.blue.withValues(alpha: 0.7)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
     final step = size.width / 256;
 
     final pathR = Path();
@@ -1089,9 +1913,13 @@ class HistogramPainter extends CustomPainter {
     canvas.drawPath(pathG, pg);
     canvas.drawPath(pathB, pb);
   }
+
   @override
   bool shouldRepaint(covariant HistogramPainter oldDelegate) =>
-      oldDelegate.maxVal != maxVal || oldDelegate.r != r || oldDelegate.g != g || oldDelegate.b != b;
+      oldDelegate.maxVal != maxVal ||
+      oldDelegate.r != r ||
+      oldDelegate.g != g ||
+      oldDelegate.b != b;
 }
 
 class HistogramData {
@@ -1100,4 +1928,33 @@ class HistogramData {
   final List<int> b;
   final int maxVal;
   HistogramData(this.r, this.g, this.b, this.maxVal);
+}
+
+class PolaroidPageRoute<T> extends PageRouteBuilder<T> {
+  final WidgetBuilder builder;
+
+  PolaroidPageRoute({required this.builder})
+    : super(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            builder(context),
+        transitionDuration: const Duration(milliseconds: 350),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final scaleCurve = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+          );
+          final fadeCurve = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+          );
+          return FadeTransition(
+            opacity: fadeCurve,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.85, end: 1.0).animate(scaleCurve),
+              child: child,
+            ),
+          );
+        },
+      );
 }

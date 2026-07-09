@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(npx --version)",
+      "Bash(git clone *)",
+      "Bash(ls /tmp/claude-skills-tmp/engineering/chaos-engineering/ 2>/dev/null)",
+      "Read(//tmp/claude-skills-tmp/engineering/**)"
+    ]
+  }
+}

@@ -129,17 +129,12 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
       );
       String? place;
       try {
-        final marks = await placemarkFromCoordinates(
-          pos.latitude,
-          pos.longitude,
-        );
+        final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
         final m = marks.isNotEmpty ? marks.first : null;
         if (m != null) {
-          final bits = [
-            m.locality,
-            m.administrativeArea,
-            m.country,
-          ].where((s) => s != null && s.trim().isNotEmpty).take(2);
+          final bits = [m.locality, m.administrativeArea, m.country]
+              .where((s) => s != null && s.trim().isNotEmpty)
+              .take(2);
           place = bits.join(', ');
         }
       } catch (_) {
@@ -162,9 +157,7 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-      );
+      ..showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
   Future<void> _save() async {
@@ -226,14 +219,8 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
         title: const Text('Discard this frame?'),
         content: const Text('The captured photo will be deleted.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Discard'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Discard')),
         ],
       ),
     );
@@ -264,57 +251,25 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                   children: [
                     // Photo preview
-                    FilmStripWrapper(
-                      isDark: isDark,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: AspectRatio(
-                          aspectRatio: 3 / 4,
-                          child: ColorFiltered(
-                            colorFilter: (_bake && _hasColorFilm)
-                                ? (widget.customLutMatrix != null
-                                      ? ColorFilter.matrix(
-                                          widget.customLutMatrix!,
-                                        )
-                                      : ColorFilter.matrix(
-                                          filmSimMatrix(widget.film)!,
-                                        ))
-                                : const ColorFilter.matrix([
-                                    1,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    1,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    1,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    1,
-                                    0,
-                                  ]),
-                            child: Image.file(
-                              File(widget.imagePath),
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              cacheWidth: 900,
-                              errorBuilder: (ctx, error, stackTrace) =>
-                                  Container(
-                                    color: Colors.black12,
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      size: 48,
-                                      color: LogbookTheme.faded(isDark),
-                                    ),
-                                  ),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: AspectRatio(
+                        aspectRatio: 3 / 4,
+                        child: ColorFiltered(
+                          colorFilter: (_bake && _hasColorFilm)
+                              ? (widget.customLutMatrix != null
+                                  ? ColorFilter.matrix(widget.customLutMatrix!)
+                                  : ColorFilter.matrix(filmSimMatrix(widget.film)!))
+                              : const ColorFilter.matrix([1,0,0,0,0, 0,1,0,0,0, 0,0,1,0,0, 0,0,0,1,0]),
+                          child: Image.file(
+                            File(widget.imagePath),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            cacheWidth: 900,
+                            errorBuilder: (ctx, error, stackTrace) => Container(
+                              color: Colors.black12,
+                              child: Icon(Icons.broken_image_outlined,
+                                  size: 48, color: LogbookTheme.faded(isDark)),
                             ),
                           ),
                         ),
@@ -333,18 +288,15 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF241F18)
                             : const Color(0xFFFBF6E9),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: LogbookTheme.faded(
-                            isDark,
-                          ).withValues(alpha: 0.3),
+                          color: LogbookTheme.faded(isDark)
+                              .withValues(alpha: 0.3),
                         ),
                       ),
                       child: TextField(
@@ -376,18 +328,15 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF241F18)
                             : const Color(0xFFFBF6E9),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: LogbookTheme.faded(
-                            isDark,
-                          ).withValues(alpha: 0.3),
+                          color: LogbookTheme.faded(isDark)
+                              .withValues(alpha: 0.3),
                         ),
                       ),
                       child: TextField(
@@ -419,25 +368,20 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF241F18)
                             : const Color(0xFFFBF6E9),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: LogbookTheme.faded(
-                            isDark,
-                          ).withValues(alpha: 0.3),
+                          color: LogbookTheme.faded(isDark)
+                              .withValues(alpha: 0.3),
                         ),
                       ),
                       child: CustomPaint(
                         painter: LinedPaperPainter(
-                          lineColor: LogbookTheme.faded(
-                            isDark,
-                          ).withValues(alpha: 0.25),
+                          lineColor: LogbookTheme.faded(isDark).withValues(alpha: 0.25),
                           lineHeight: 23.0,
                           offsetTop: 20.0,
                         ),
@@ -448,8 +392,7 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                           style: caveat(
                             size: 20,
                             color: LogbookTheme.ink(isDark),
-                            height:
-                                1.15, // aligns with 23.0 lineHeight visually
+                            height: 1.15, // aligns with 23.0 lineHeight visually
                           ),
                           cursorColor: LogbookTheme.ink(isDark),
                           decoration: const InputDecoration(
@@ -472,9 +415,8 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                             : const Color(0xFFEFE6CC),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: LogbookTheme.faded(
-                            isDark,
-                          ).withValues(alpha: 0.3),
+                          color: LogbookTheme.faded(isDark)
+                              .withValues(alpha: 0.3),
                         ),
                       ),
                       child: Column(
@@ -496,9 +438,15 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                                 'f/${s.aperture.toStringAsFixed(1)}',
                                 isDark,
                               ),
-                              _stamp(_fmtShutter(s.shutterSpeed), isDark),
+                              _stamp(
+                                _fmtShutter(s.shutterSpeed),
+                                isDark,
+                              ),
                               _stamp('ISO ${s.iso}', isDark),
-                              _stamp('EV ${s.ev.toStringAsFixed(1)}', isDark),
+                              _stamp(
+                                'EV ${s.ev.toStringAsFixed(1)}',
+                                isDark,
+                              ),
                               _stamp(
                                 '${s.exposureCompensation >= 0 ? "+" : ""}${s.exposureCompensation.toStringAsFixed(1)} ev',
                                 isDark,
@@ -517,11 +465,10 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                       _toggleRow(
                         isDark,
                         icon: Icons.auto_fix_high_outlined,
-                        label: isBw
-                            ? 'Apply B&W film-sim look'
-                            : 'Apply film-sim look',
+                        label: isBw ? 'Apply B&W film-sim look' : 'Apply film-sim look',
                         value: _bake,
-                        onChanged: (v) => setState(() => _bake = v ?? false),
+                        onChanged: (v) =>
+                            setState(() => _bake = v ?? false),
                       ),
                     const SizedBox(height: 8),
 
@@ -532,8 +479,8 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                       label: _locating
                           ? 'Finding location…'
                           : (_addLocation
-                                ? (_placeName ?? 'Location added')
-                                : 'Add location'),
+                              ? (_placeName ?? 'Location added')
+                              : 'Add location'),
                       value: _addLocation,
                       onChanged: _locating ? null : _toggleLocation,
                     ),
@@ -557,7 +504,10 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                   onPressed: _saving ? null : _discard,
                   child: Text(
                     'Discard',
-                    style: caveat(size: 22, color: LogbookTheme.faded(isDark)),
+                    style: caveat(
+                      size: 22,
+                      color: LogbookTheme.faded(isDark),
+                    ),
                   ),
                 ),
               ),
@@ -584,7 +534,10 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                         )
                       : Text(
                           'Save',
-                          style: caveat(size: 24, weight: FontWeight.bold),
+                          style: caveat(
+                            size: 24,
+                            weight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
@@ -598,7 +551,10 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
   Widget _stamp(String text, bool isDark) {
     return Text(
       text,
-      style: stampStyle(color: LogbookTheme.ink(isDark), size: 16),
+      style: stampStyle(
+        color: LogbookTheme.ink(isDark),
+        size: 16,
+      ),
     );
   }
 
@@ -612,7 +568,9 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9),
+        color: isDark
+            ? const Color(0xFF241F18)
+            : const Color(0xFFFBF6E9),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: LogbookTheme.faded(isDark).withValues(alpha: 0.3),
@@ -625,7 +583,10 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
           Expanded(
             child: Text(
               label,
-              style: caveat(size: 20, color: LogbookTheme.ink(isDark)),
+              style: caveat(
+                size: 20,
+                color: LogbookTheme.ink(isDark),
+              ),
             ),
           ),
           Switch(value: value, onChanged: onChanged),
@@ -638,71 +599,5 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
     if (s >= 1) return s.toStringAsFixed(s == s.roundToDouble() ? 0 : 1);
     final inv = (1 / s).round();
     return '1/$inv';
-  }
-}
-
-class FilmStripWrapper extends StatelessWidget {
-  final Widget child;
-  final bool isDark;
-  const FilmStripWrapper({
-    required this.child,
-    required this.isDark,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F0F0E), // Charcoal black color
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            _SprocketStrip(isDark: isDark),
-            const SizedBox(width: 8),
-            Expanded(child: child),
-            const SizedBox(width: 8),
-            _SprocketStrip(isDark: isDark),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SprocketStrip extends StatelessWidget {
-  final bool isDark;
-  const _SprocketStrip({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final holeColor = LogbookTheme.paper(isDark);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: List.generate(
-          9,
-          (index) => Container(
-            width: 8,
-            height: 12,
-            decoration: BoxDecoration(
-              color: holeColor,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
