@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
@@ -6,16 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../camera_viewfinder_screen.dart';
 import '../exposure_state.dart';
+import '../ui_helpers.dart';
 import 'log_entry.dart';
 import 'logbook_store.dart';
 import 'logbook_theme.dart';
 import 'log_detail_screen.dart';
 
-enum LogbookSortOrder {
-  dateDescending,
-  dateAscending,
-  titleAZ,
-}
+enum LogbookSortOrder { dateDescending, dateAscending, titleAZ }
 
 /// The Logbook list — opened from the bottom-nav LOG button.
 class LogbookScreen extends StatefulWidget {
@@ -34,6 +32,7 @@ class _LogbookScreenState extends State<LogbookScreen> {
   bool _compactMode = false;
   int _currentTab = 0; // 0 = Frames, 1 = Collections
   LogFolder? _activeFolder; // Filtered collection active
+  final Set<String> _deletingIds = {};
 
   late final PageController _pageController;
 
@@ -92,7 +91,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
     _folderEntriesMap = folderMap;
   }
 
-  Future<void> _openDetail(LogEntry entry, {bool startInEditMode = false}) async {
+  Future<void> _openDetail(
+    LogEntry entry, {
+    bool startInEditMode = false,
+  }) async {
     // Pre-decode the image at the EXACT size the detail screen will display
     // (cacheWidth 1200), so the Hero transition doesn't stall on first decode.
     // Plain FileImage would decode at native res → different cache key → wasted.
@@ -103,25 +105,39 @@ class _LogbookScreenState extends State<LogbookScreen> {
 
     if (!mounted) return;
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry, startInEditMode: startInEditMode)),
+      MaterialPageRoute(
+        builder: (_) =>
+            LogDetailScreen(entry: entry, startInEditMode: startInEditMode),
+      ),
     );
     if (changed == true && mounted) _load();
   }
 
-  Future<void> _openViewfinder() async {
+  Future<void> _openViewfinder(Offset centerOffset) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AnalogViewfinderScreen()),
+      AperturePageRoute(
+        builder: (_) => const AnalogViewfinderScreen(),
+        centerOffset: centerOffset,
+      ),
     );
     // Refresh in case a capture produced a new entry.
     if (mounted) _load();
   }
 
-  void _showContextMenu(BuildContext context, LogEntry entry, Offset position, {VoidCallback? onEdit}) async {
+  void _showContextMenu(
+    BuildContext context,
+    LogEntry entry,
+    Offset position, {
+    VoidCallback? onEdit,
+  }) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final paperColor = isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9);
+    final paperColor = isDark
+        ? const Color(0xFF241F18)
+        : const Color(0xFFFBF6E9);
     final inkColor = LogbookTheme.ink(isDark);
 
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
 
     final selected = await showMenu<String>(
       context: context,
@@ -160,9 +176,16 @@ class _LogbookScreenState extends State<LogbookScreen> {
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete_outline, color: const Color(0xFFD46A6A), size: 18),
+              Icon(
+                Icons.delete_outline,
+                color: const Color(0xFFD46A6A),
+                size: 18,
+              ),
               const SizedBox(width: 10),
-              Text('Delete Frame', style: caveat(size: 20, color: const Color(0xFFD46A6A))),
+              Text(
+                'Delete Frame',
+                style: caveat(size: 20, color: const Color(0xFFD46A6A)),
+              ),
             ],
           ),
         ),
@@ -212,7 +235,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
                     style: caveat(size: 22, color: inkColor),
                   ),
                   onTap: () async {
-                    await LogbookStore.instance.moveEntryToFolder(entry.id, null);
+                    await LogbookStore.instance.moveEntryToFolder(
+                      entry.id,
+                      null,
+                    );
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
                     _load();
@@ -235,7 +261,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
                       ),
                     ),
                     onTap: () async {
-                      await LogbookStore.instance.moveEntryToFolder(entry.id, folder.id);
+                      await LogbookStore.instance.moveEntryToFolder(
+                        entry.id,
+                        folder.id,
+                      );
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx);
                       _load();
@@ -289,7 +318,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
                   decoration: InputDecoration(
                     labelText: 'Folder Name',
                     labelStyle: stampStyle(color: LogbookTheme.faded(isDark)),
-                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: inkColor)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: inkColor),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -300,12 +331,14 @@ class _LogbookScreenState extends State<LogbookScreen> {
                   decoration: InputDecoration(
                     labelText: 'Description (Optional)',
                     labelStyle: stampStyle(color: LogbookTheme.faded(isDark)),
-                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: inkColor)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: inkColor),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 // Color swatches
-                _FolderColorPicker(
+                FolderColorPicker(
                   selectedColor: selectedColor,
                   onColorSelected: (c) => setInner(() => selectedColor = c),
                 ),
@@ -314,7 +347,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: caveat(size: 20, color: LogbookTheme.faded(isDark))),
+                child: Text(
+                  'Cancel',
+                  style: caveat(size: 20, color: LogbookTheme.faded(isDark)),
+                ),
               ),
               TextButton(
                 onPressed: () async {
@@ -326,14 +362,24 @@ class _LogbookScreenState extends State<LogbookScreen> {
                       colorValue: selectedColor,
                     );
                     if (moveAfterCreate != null) {
-                      await LogbookStore.instance.moveEntryToFolder(moveAfterCreate.id, folder.id);
+                      await LogbookStore.instance.moveEntryToFolder(
+                        moveAfterCreate.id,
+                        folder.id,
+                      );
                     }
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
                     _load();
                   }
                 },
-                child: Text('Create', style: caveat(size: 20, weight: FontWeight.bold, color: inkColor)),
+                child: Text(
+                  'Create',
+                  style: caveat(
+                    size: 20,
+                    weight: FontWeight.bold,
+                    color: inkColor,
+                  ),
+                ),
               ),
             ],
           ),
@@ -343,23 +389,23 @@ class _LogbookScreenState extends State<LogbookScreen> {
   }
 
   void _confirmDelete(LogEntry entry) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete entry?'),
-        content: const Text('This photo and its notes will be removed.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+    final ok = await _showSkeuomorphicConfirmDialog(
+      context,
+      title: 'Delete Entry?',
+      content: 'This photo and its notes will be permanently removed.',
     );
     if (ok == true) {
+      setState(() {
+        _deletingIds.add(entry.id);
+      });
+      await Future.delayed(const Duration(milliseconds: 350));
       await LogbookStore.instance.delete(entry.id);
-      _load();
+      if (mounted) {
+        setState(() {
+          _deletingIds.remove(entry.id);
+        });
+        _load();
+      }
     }
   }
 
@@ -389,15 +435,14 @@ class _LogbookScreenState extends State<LogbookScreen> {
                         setState(() => _activeFolder = null);
                         _updateProcessedData();
                       },
-                      actions: [
-                        _buildSortButton(isDark),
-                      ],
+                      actions: [_buildSortButton(isDark)],
                     )
                   else
                     buildBookHeader(
                       context,
                       'Logbook',
-                      subtitle: '${_entries.length} ${_entries.length == 1 ? "entry" : "entries"}',
+                      subtitle:
+                          '${_entries.length} ${_entries.length == 1 ? "entry" : "entries"}',
                       actions: [
                         _buildSortButton(isDark),
                         const SizedBox(width: 4),
@@ -424,9 +469,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
                         const SizedBox(width: 4),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () {
+                          onTapDown: (details) {
                             ExposureState.hapticLight();
-                            _openViewfinder();
+                            _openViewfinder(details.globalPosition);
                           },
                           child: Container(
                             width: 44,
@@ -444,7 +489,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
                   if (_activeFolder == null)
                     Container(
                       color: LogbookTheme.paper(isDark),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: Row(
                         children: [
                           _tabButton(0, 'ALL FRAMES', isDark),
@@ -504,15 +552,14 @@ class _LogbookScreenState extends State<LogbookScreen> {
               : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: active ? fadedColor.withValues(alpha: 0.4) : Colors.transparent,
+            color: active
+                ? fadedColor.withValues(alpha: 0.4)
+                : Colors.transparent,
           ),
         ),
         child: Text(
           label,
-          style: stampStyle(
-            color: active ? inkColor : fadedColor,
-            size: 13,
-          ),
+          style: stampStyle(color: active ? inkColor : fadedColor, size: 13),
         ),
       ),
     );
@@ -520,11 +567,7 @@ class _LogbookScreenState extends State<LogbookScreen> {
 
   Widget _buildSortButton(bool isDark) {
     return PopupMenuButton<LogbookSortOrder>(
-      icon: Icon(
-        Icons.sort,
-        color: LogbookTheme.ink(isDark),
-        size: 22,
-      ),
+      icon: Icon(Icons.sort, color: LogbookTheme.ink(isDark), size: 22),
       color: isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9),
       shape: Border.all(
         color: LogbookTheme.faded(isDark).withValues(alpha: 0.3),
@@ -545,7 +588,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
             style: caveat(
               size: 20,
               color: LogbookTheme.ink(isDark),
-              weight: _sortOrder == LogbookSortOrder.dateDescending ? FontWeight.bold : FontWeight.normal,
+              weight: _sortOrder == LogbookSortOrder.dateDescending
+                  ? FontWeight.bold
+                  : FontWeight.normal,
             ),
           ),
         ),
@@ -556,7 +601,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
             style: caveat(
               size: 20,
               color: LogbookTheme.ink(isDark),
-              weight: _sortOrder == LogbookSortOrder.dateAscending ? FontWeight.bold : FontWeight.normal,
+              weight: _sortOrder == LogbookSortOrder.dateAscending
+                  ? FontWeight.bold
+                  : FontWeight.normal,
             ),
           ),
         ),
@@ -567,7 +614,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
             style: caveat(
               size: 20,
               color: LogbookTheme.ink(isDark),
-              weight: _sortOrder == LogbookSortOrder.titleAZ ? FontWeight.bold : FontWeight.normal,
+              weight: _sortOrder == LogbookSortOrder.titleAZ
+                  ? FontWeight.bold
+                  : FontWeight.normal,
             ),
           ),
         ),
@@ -600,21 +649,29 @@ class _LogbookScreenState extends State<LogbookScreen> {
         itemBuilder: (context, i) {
           final entry = _sortedEntries[i];
           Offset tapPosition = Offset.zero;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (details) {
-              tapPosition = details.globalPosition;
-            },
-            child: _LogEntryContainer(
-              entry: entry,
-              compactMode: _compactMode,
-              isDark: isDark,
-              onClosed: () {
-                if (mounted) _load();
+          return _DeletingItemAnimator(
+            isDeleting: _deletingIds.contains(entry.id),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) {
+                tapPosition = details.globalPosition;
               },
-              onLongPress: (triggerEdit) {
-                _showContextMenu(context, entry, tapPosition, onEdit: triggerEdit);
-              },
+              child: _LogEntryContainer(
+                entry: entry,
+                compactMode: _compactMode,
+                isDark: isDark,
+                onClosed: () {
+                  if (mounted) _load();
+                },
+                onLongPress: (triggerEdit) {
+                  _showContextMenu(
+                    context,
+                    entry,
+                    tapPosition,
+                    onEdit: triggerEdit,
+                  );
+                },
+              ),
             ),
           );
         },
@@ -671,7 +728,8 @@ class _LogbookScreenState extends State<LogbookScreen> {
                     onClosed: (_) {
                       if (mounted) _load();
                     },
-                    openBuilder: (context, action) => FolderDetailScreen(folder: folder),
+                    openBuilder: (context, action) =>
+                        FolderDetailScreen(folder: folder),
                     closedBuilder: (context, action) => _FolderCard(
                       folder: folder,
                       folderEntries: folderEntries,
@@ -718,7 +776,8 @@ class _LogbookScreenState extends State<LogbookScreen> {
                     onClosed: (_) {
                       if (mounted) _load();
                     },
-                    openBuilder: (context, action) => FolderDetailScreen(folder: folder),
+                    openBuilder: (context, action) =>
+                        FolderDetailScreen(folder: folder),
                     closedBuilder: (context, action) => _FolderCard(
                       folder: folder,
                       folderEntries: folderEntries,
@@ -739,11 +798,11 @@ class _LogbookScreenState extends State<LogbookScreen> {
     );
   }
 
-
-
   void _showFolderContextMenu(BuildContext context, LogFolder folder) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final paperColor = isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9);
+    final paperColor = isDark
+        ? const Color(0xFF241F18)
+        : const Color(0xFFFBF6E9);
     final inkColor = LogbookTheme.ink(isDark);
 
     final selected = await showMenu<String>(
@@ -762,7 +821,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
             children: [
               Icon(Icons.edit_outlined, color: inkColor, size: 18),
               const SizedBox(width: 10),
-              Text('Edit Archive Info', style: caveat(size: 20, color: inkColor)),
+              Text(
+                'Edit Archive Info',
+                style: caveat(size: 20, color: inkColor),
+              ),
             ],
           ),
         ),
@@ -770,9 +832,16 @@ class _LogbookScreenState extends State<LogbookScreen> {
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete_outline, color: const Color(0xFFD46A6A), size: 18),
+              Icon(
+                Icons.delete_outline,
+                color: const Color(0xFFD46A6A),
+                size: 18,
+              ),
               const SizedBox(width: 10),
-              Text('Delete Archive', style: caveat(size: 20, color: const Color(0xFFD46A6A))),
+              Text(
+                'Delete Archive',
+                style: caveat(size: 20, color: const Color(0xFFD46A6A)),
+              ),
             ],
           ),
         ),
@@ -814,7 +883,9 @@ class _LogbookScreenState extends State<LogbookScreen> {
                   decoration: InputDecoration(
                     labelText: 'Folder Name',
                     labelStyle: stampStyle(color: LogbookTheme.faded(isDark)),
-                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: inkColor)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: inkColor),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -825,11 +896,13 @@ class _LogbookScreenState extends State<LogbookScreen> {
                   decoration: InputDecoration(
                     labelText: 'Description (Optional)',
                     labelStyle: stampStyle(color: LogbookTheme.faded(isDark)),
-                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: inkColor)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: inkColor),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                _FolderColorPicker(
+                FolderColorPicker(
                   selectedColor: selectedColor,
                   onColorSelected: (c) => setInner(() => selectedColor = c),
                 ),
@@ -838,7 +911,10 @@ class _LogbookScreenState extends State<LogbookScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: caveat(size: 20, color: LogbookTheme.faded(isDark))),
+                child: Text(
+                  'Cancel',
+                  style: caveat(size: 20, color: LogbookTheme.faded(isDark)),
+                ),
               ),
               TextButton(
                 onPressed: () async {
@@ -853,7 +929,14 @@ class _LogbookScreenState extends State<LogbookScreen> {
                     _load();
                   }
                 },
-                child: Text('Save', style: caveat(size: 20, weight: FontWeight.bold, color: inkColor)),
+                child: Text(
+                  'Save',
+                  style: caveat(
+                    size: 20,
+                    weight: FontWeight.bold,
+                    color: inkColor,
+                  ),
+                ),
               ),
             ],
           ),
@@ -867,9 +950,14 @@ class _LogbookScreenState extends State<LogbookScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Archive Folder?'),
-        content: const Text('This will delete the folder but KEEP all your photo entries inside it (they will be unassigned).'),
+        content: const Text(
+          'This will delete the folder but KEEP all your photo entries inside it (they will be unassigned).',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -912,15 +1000,20 @@ class _LogbookScreenState extends State<LogbookScreen> {
                     ? 'Long press frames in the main list to move them to this archive.'
                     : 'Open the viewfinder, capture a frame,\nand it will be filed here.',
                 textAlign: TextAlign.center,
-                style: stampStyle(
-                  color: LogbookTheme.faded(isDark),
-                  size: 16,
-                ),
+                style: stampStyle(color: LogbookTheme.faded(isDark), size: 16),
               ),
               if (!isFiltered) ...[
                 const SizedBox(height: 24),
                 TextButton.icon(
-                  onPressed: _openViewfinder,
+                  onPressed: () {
+                    final renderBox = context.findRenderObject() as RenderBox?;
+                    final centerMap = renderBox != null
+                        ? renderBox.localToGlobal(
+                            renderBox.size.center(Offset.zero),
+                          )
+                        : MediaQuery.sizeOf(context).center(Offset.zero);
+                    _openViewfinder(centerMap);
+                  },
                   icon: Icon(Icons.camera_alt, color: LogbookTheme.ink(isDark)),
                   label: Text(
                     'Open Viewfinder',
@@ -952,88 +1045,90 @@ class _PolaroidCard extends StatelessWidget {
     const cardColor = Color(0xFFFBF6E9);
 
     return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 18),
-          padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(0),
-            // Soft paper-shadow
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                offset: const Offset(1.5, 2.5),
-                blurRadius: 5,
-              ),
-            ],
-            border: Border.all(
-              color: LogbookTheme.faded(false).withValues(alpha: 0.25),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 18),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(0),
+          // Soft paper-shadow
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              offset: const Offset(1.5, 2.5),
+              blurRadius: 5,
             ),
+          ],
+          border: Border.all(
+            color: LogbookTheme.faded(false).withValues(alpha: 0.25),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Photo with physical "Tape" look
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(0),
-                    child: Hero(
-                      tag: 'entry_image_${entry.id}',
-                      child: AspectRatio(
-                        aspectRatio: 4 / 3,
-                        child: Image.file(
-                          File(entry.imagePath),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          // Downscale decode for the thumbnail — big memory saving.
-                          cacheWidth: 600,
-                          errorBuilder: (ctx, error, stack) {
-                            return Container(
-                              color: Colors.black12,
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: LogbookTheme.faded(false),
-                                size: 40,
-                              ),
-                            );
-                          },
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Photo with physical "Tape" look
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(0),
+                  child: Hero(
+                    tag: 'entry_image_${entry.id}',
+                    child: AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: Image.file(
+                        File(entry.imagePath),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        // Downscale decode for the thumbnail — big memory saving.
+                        cacheWidth: 600,
+                        errorBuilder: (ctx, error, stack) {
+                          return Container(
+                            color: Colors.black12,
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: LogbookTheme.faded(false),
+                              size: 40,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                // Decorative semi-transparent physical tape on top of the image
+                Positioned(
+                  top: -12,
+                  left: 0,
+                  right: 0,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Transform.rotate(
+                      angle: 0.05,
+                      child: Container(
+                        width: 55,
+                        height: 15,
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFD2C8B4,
+                          ).withValues(alpha: 0.35),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.03),
+                              blurRadius: 1,
+                              offset: const Offset(0.5, 0.5),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                  // Decorative semi-transparent physical tape on top of the image
-                  Positioned(
-                    top: -12,
-                    left: 0,
-                    right: 0,
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: Transform.rotate(
-                        angle: 0.05,
-                        child: Container(
-                          width: 55,
-                          height: 15,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD2C8B4).withValues(alpha: 0.35),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 1,
-                                offset: const Offset(0.5, 0.5),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             // Title (handwritten)
             Text(
               entry.title.trim().isEmpty
@@ -1053,10 +1148,7 @@ class _PolaroidCard extends StatelessWidget {
                 entry.note.trim(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: caveat(
-                  size: 18,
-                  color: LogbookTheme.faded(false),
-                ),
+                style: caveat(size: 18, color: LogbookTheme.faded(false)),
               ),
             ],
             const SizedBox(height: 4),
@@ -1065,10 +1157,7 @@ class _PolaroidCard extends StatelessWidget {
               entry.roll != null && entry.roll!.trim().isNotEmpty
                   ? '${entry.roll!.toUpperCase()} · ${entry.settings}'
                   : entry.settings,
-              style: stampStyle(
-                color: LogbookTheme.faded(false),
-                size: 15,
-              ),
+              style: stampStyle(color: LogbookTheme.faded(false), size: 15),
             ),
             const SizedBox(height: 2),
             // Date / place footer.
@@ -1082,10 +1171,7 @@ class _PolaroidCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(
                   _formatDate(entry.createdAt),
-                  style: stampStyle(
-                    color: LogbookTheme.faded(false),
-                    size: 14,
-                  ),
+                  style: stampStyle(color: LogbookTheme.faded(false), size: 14),
                 ),
                 if (entry.placeName != null) ...[
                   const SizedBox(width: 10),
@@ -1117,8 +1203,19 @@ class _PolaroidCard extends StatelessWidget {
 
   static String _formatDate(DateTime dt) {
     const months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}';
   }
@@ -1150,7 +1247,8 @@ class _LogEntryContainerState extends State<_LogEntryContainer> {
   Widget build(BuildContext context) {
     final double rotateAngle = widget.compactMode
         ? 0.0
-        : (((widget.entry.id.hashCode * 37) % 100) - 50) / 800; // rotation between -3.5 and +3.5 deg
+        : (((widget.entry.id.hashCode * 37) % 100) - 50) /
+              800; // rotation between -3.5 and +3.5 deg
 
     return OpenContainer<bool>(
       transitionType: ContainerTransitionType.fade,
@@ -1187,7 +1285,10 @@ class _LogEntryContainerState extends State<_LogEntryContainer> {
                   entry: widget.entry,
                   onTap: () {
                     precacheImage(
-                      ResizeImage(FileImage(File(widget.entry.imagePath)), width: 1200),
+                      ResizeImage(
+                        FileImage(File(widget.entry.imagePath)),
+                        width: 1200,
+                      ),
                       context,
                     );
                     action();
@@ -1197,7 +1298,10 @@ class _LogEntryContainerState extends State<_LogEntryContainer> {
                   entry: widget.entry,
                   onTap: () {
                     precacheImage(
-                      ResizeImage(FileImage(File(widget.entry.imagePath)), width: 1200),
+                      ResizeImage(
+                        FileImage(File(widget.entry.imagePath)),
+                        width: 1200,
+                      ),
                       context,
                     );
                     action();
@@ -1209,10 +1313,7 @@ class _LogEntryContainerState extends State<_LogEntryContainer> {
           return closedChild;
         }
 
-        return Transform.rotate(
-          angle: rotateAngle,
-          child: closedChild,
-        );
+        return Transform.rotate(angle: rotateAngle, child: closedChild);
       },
     );
   }
@@ -1260,13 +1361,16 @@ class _CompactListRow extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   Transform.rotate(
-                    angle: -0.03, // slight tilt for skeuomorphic polaroid print feel
+                    angle:
+                        -0.03, // slight tilt for skeuomorphic polaroid print feel
                     child: Container(
                       padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
                       decoration: BoxDecoration(
                         color: Colors.white, // stays white even in dark mode
                         border: Border.all(
-                          color: LogbookTheme.faded(false).withValues(alpha: 0.2),
+                          color: LogbookTheme.faded(
+                            false,
+                          ).withValues(alpha: 0.2),
                           width: 0.8,
                         ),
                         boxShadow: [
@@ -1312,7 +1416,9 @@ class _CompactListRow extends StatelessWidget {
                         width: 32,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD2C8B4).withValues(alpha: 0.35),
+                          color: const Color(
+                            0xFFD2C8B4,
+                          ).withValues(alpha: 0.35),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.01),
@@ -1411,8 +1517,19 @@ class _CompactListRow extends StatelessWidget {
 
   static String _formatDate(DateTime dt) {
     const months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}';
   }
@@ -1442,7 +1559,9 @@ const List<int> kFolderColorPresets = [
 /// Returns appropriate ink (text/icon) color for a given folder color.
 Color folderInkFor(int colorValue) {
   final luminance = Color(colorValue).computeLuminance();
-  return luminance > 0.35 ? const Color(0xFF2A2520) : Colors.white.withValues(alpha: 0.9);
+  return luminance > 0.35
+      ? const Color(0xFF2A2520)
+      : Colors.white.withValues(alpha: 0.9);
 }
 
 /// Returns a subtle faded/secondary color for a folder.
@@ -1468,11 +1587,12 @@ LinearGradient folderGradientFor(int colorValue) {
 }
 
 /// Color picker row widget used inside Create/Edit folder dialogs.
-class _FolderColorPicker extends StatelessWidget {
+class FolderColorPicker extends StatelessWidget {
   final int? selectedColor;
   final void Function(int? color) onColorSelected;
 
-  const _FolderColorPicker({
+  const FolderColorPicker({
+    super.key,
     required this.selectedColor,
     required this.onColorSelected,
   });
@@ -1485,7 +1605,9 @@ class _FolderColorPicker extends StatelessWidget {
         Text(
           'FOLDER COLOR',
           style: stampStyle(
-            color: LogbookTheme.faded(Theme.of(context).brightness == Brightness.dark),
+            color: LogbookTheme.faded(
+              Theme.of(context).brightness == Brightness.dark,
+            ),
             size: 11,
           ),
         ),
@@ -1514,11 +1636,18 @@ class _FolderColorPicker extends StatelessWidget {
                     width: 2.5,
                   ),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 4),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 4,
+                    ),
                   ],
                 ),
                 child: selectedColor == null
-                    ? const Icon(Icons.check, size: 16, color: Color(0xFF8A7E64))
+                    ? const Icon(
+                        Icons.check,
+                        size: 16,
+                        color: Color(0xFF8A7E64),
+                      )
                     : null,
               ),
             ),
@@ -1533,11 +1662,16 @@ class _FolderColorPicker extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: Color(c),
                     border: Border.all(
-                      color: selected ? folderInkFor(c).withValues(alpha: 0.8) : Colors.transparent,
+                      color: selected
+                          ? folderInkFor(c).withValues(alpha: 0.8)
+                          : Colors.transparent,
                       width: 2.5,
                     ),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 4),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.14),
+                        blurRadius: 4,
+                      ),
                     ],
                   ),
                   child: selected
@@ -1575,16 +1709,16 @@ class _FolderCard extends StatelessWidget {
     final folderGradient = hasCustomColor
         ? folderGradientFor(folder.colorValue!)
         : (Theme.of(context).brightness == Brightness.dark
-            ? const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF383127), Color(0xFF2C261E)],
-              )
-            : const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFFDFBF0), Color(0xFFF7F1D5)],
-              ));
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF383127), Color(0xFF2C261E)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFDFBF0), Color(0xFFF7F1D5)],
+                ));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final inkColor = hasCustomColor
@@ -1600,8 +1734,8 @@ class _FolderCard extends StatelessWidget {
       color: hasCustomColor
           ? folderInkFor(folder.colorValue!).withValues(alpha: 0.18)
           : (isDark
-              ? const Color(0xFF4C4234).withValues(alpha: 0.5)
-              : const Color(0xFFDED3B3).withValues(alpha: 0.8)),
+                ? const Color(0xFF4C4234).withValues(alpha: 0.5)
+                : const Color(0xFFDED3B3).withValues(alpha: 0.8)),
       width: 1.5,
     );
 
@@ -1645,11 +1779,11 @@ class _FolderCard extends StatelessWidget {
                 ),
                 Expanded(
                   child: Container(
-                    height: isGrid ? 19 : 23, // aligns with tab height + padding
+                    height: isGrid
+                        ? 19
+                        : 23, // aligns with tab height + padding
                     decoration: BoxDecoration(
-                      border: Border(
-                        bottom: borderSide,
-                      ),
+                      border: Border(bottom: borderSide),
                     ),
                   ),
                 ),
@@ -1677,7 +1811,9 @@ class _FolderCard extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.35 : 0.08,
+                      ),
                       offset: const Offset(1, 3),
                       blurRadius: 6,
                     ),
@@ -1700,10 +1836,7 @@ class _FolderCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             '${folderEntries.length} ${folderEntries.length == 1 ? "Frame" : "Frames"}',
-                            style: stampStyle(
-                              color: accentLabel,
-                              size: 11,
-                            ),
+                            style: stampStyle(color: accentLabel, size: 11),
                           ),
                           const Spacer(),
                           Center(
@@ -1713,12 +1846,16 @@ class _FolderCard extends StatelessWidget {
                               child: folderEntries.isEmpty
                                   ? Container(
                                       decoration: BoxDecoration(
-                                        color: isDark ? Colors.black26 : Colors.white24,
+                                        color: isDark
+                                            ? Colors.black26
+                                            : Colors.white24,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Icon(
                                         Icons.folder_open,
-                                        color: fadedColor.withValues(alpha: 0.3),
+                                        color: fadedColor.withValues(
+                                          alpha: 0.3,
+                                        ),
                                         size: 24,
                                       ),
                                     )
@@ -1726,12 +1863,24 @@ class _FolderCard extends StatelessWidget {
                                       clipBehavior: Clip.none,
                                       alignment: Alignment.center,
                                       children: List.generate(
-                                        folderEntries.length > 3 ? 3 : folderEntries.length,
+                                        folderEntries.length > 3
+                                            ? 3
+                                            : folderEntries.length,
                                         (idx) {
-                                          final entry = folderEntries[folderEntries.length - 1 - idx];
-                                          double rot = (idx == 0) ? -0.05 : (idx == 1 ? 0.06 : -0.12);
-                                          double offsetDx = (idx == 0) ? -6.0 : (idx == 1 ? 6.0 : 0.0);
-                                          double offsetDy = (idx == 0) ? 3.0 : (idx == 1 ? -3.0 : 0.0);
+                                          final entry =
+                                              folderEntries[folderEntries
+                                                      .length -
+                                                  1 -
+                                                  idx];
+                                          double rot = (idx == 0)
+                                              ? -0.05
+                                              : (idx == 1 ? 0.06 : -0.12);
+                                          double offsetDx = (idx == 0)
+                                              ? -6.0
+                                              : (idx == 1 ? 6.0 : 0.0);
+                                          double offsetDy = (idx == 0)
+                                              ? 3.0
+                                              : (idx == 1 ? -3.0 : 0.0);
 
                                           return Positioned(
                                             left: 8 + offsetDx,
@@ -1739,17 +1888,33 @@ class _FolderCard extends StatelessWidget {
                                             child: Transform.rotate(
                                               angle: rot,
                                               child: Container(
-                                                padding: const EdgeInsets.fromLTRB(2, 2, 2, 5),
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      2,
+                                                      2,
+                                                      2,
+                                                      5,
+                                                    ),
                                                 decoration: BoxDecoration(
-                                                  color: Colors.white, // stays white
+                                                  color: Colors
+                                                      .white, // stays white
                                                   border: Border.all(
-                                                    color: Colors.black.withValues(alpha: 0.15),
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.15,
+                                                        ),
                                                     width: 0.5,
                                                   ),
                                                   boxShadow: [
                                                     BoxShadow(
-                                                      color: Colors.black.withValues(alpha: 0.12),
-                                                      offset: const Offset(1, 1.5),
+                                                      color: Colors.black
+                                                          .withValues(
+                                                            alpha: 0.12,
+                                                          ),
+                                                      offset: const Offset(
+                                                        1,
+                                                        1.5,
+                                                      ),
                                                       blurRadius: 2,
                                                     ),
                                                   ],
@@ -1761,14 +1926,23 @@ class _FolderCard extends StatelessWidget {
                                                     File(entry.imagePath),
                                                     fit: BoxFit.cover,
                                                     cacheWidth: 100,
-                                                    errorBuilder: (ctx, error, stack) => Container(
-                                                      color: Colors.black12,
-                                                      child: Icon(
-                                                        Icons.broken_image_outlined,
-                                                        color: LogbookTheme.faded(false),
-                                                        size: 12,
-                                                      ),
-                                                    ),
+                                                    errorBuilder:
+                                                        (
+                                                          ctx,
+                                                          error,
+                                                          stack,
+                                                        ) => Container(
+                                                          color: Colors.black12,
+                                                          child: Icon(
+                                                            Icons
+                                                                .broken_image_outlined,
+                                                            color:
+                                                                LogbookTheme.faded(
+                                                                  false,
+                                                                ),
+                                                            size: 12,
+                                                          ),
+                                                        ),
                                                   ),
                                                 ),
                                               ),
@@ -1803,10 +1977,7 @@ class _FolderCard extends StatelessWidget {
                                     folder.note,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: caveat(
-                                      size: 18,
-                                      color: fadedColor,
-                                    ),
+                                    style: caveat(size: 18, color: fadedColor),
                                   ),
                                 ],
                                 const SizedBox(height: 12),
@@ -1828,7 +1999,9 @@ class _FolderCard extends StatelessWidget {
                             child: folderEntries.isEmpty
                                 ? Container(
                                     decoration: BoxDecoration(
-                                      color: isDark ? Colors.black26 : Colors.white24,
+                                      color: isDark
+                                          ? Colors.black26
+                                          : Colors.white24,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Icon(
@@ -1841,12 +2014,23 @@ class _FolderCard extends StatelessWidget {
                                     clipBehavior: Clip.none,
                                     alignment: Alignment.center,
                                     children: List.generate(
-                                      folderEntries.length > 3 ? 3 : folderEntries.length,
+                                      folderEntries.length > 3
+                                          ? 3
+                                          : folderEntries.length,
                                       (idx) {
-                                        final entry = folderEntries[folderEntries.length - 1 - idx];
-                                        double rot = (idx == 0) ? -0.05 : (idx == 1 ? 0.06 : -0.12);
-                                        double offsetDx = (idx == 0) ? -8.0 : (idx == 1 ? 8.0 : 0.0);
-                                        double offsetDy = (idx == 0) ? 4.0 : (idx == 1 ? -4.0 : 0.0);
+                                        final entry =
+                                            folderEntries[folderEntries.length -
+                                                1 -
+                                                idx];
+                                        double rot = (idx == 0)
+                                            ? -0.05
+                                            : (idx == 1 ? 0.06 : -0.12);
+                                        double offsetDx = (idx == 0)
+                                            ? -8.0
+                                            : (idx == 1 ? 8.0 : 0.0);
+                                        double offsetDy = (idx == 0)
+                                            ? 4.0
+                                            : (idx == 1 ? -4.0 : 0.0);
 
                                         return Positioned(
                                           left: 10 + offsetDx,
@@ -1854,17 +2038,31 @@ class _FolderCard extends StatelessWidget {
                                           child: Transform.rotate(
                                             angle: rot,
                                             child: Container(
-                                              padding: const EdgeInsets.fromLTRB(3, 3, 3, 7),
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                    3,
+                                                    3,
+                                                    3,
+                                                    7,
+                                                  ),
                                               decoration: BoxDecoration(
-                                                color: Colors.white, // stays white
+                                                color:
+                                                    Colors.white, // stays white
                                                 border: Border.all(
-                                                  color: Colors.black.withValues(alpha: 0.15),
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.15),
                                                   width: 0.5,
                                                 ),
                                                 boxShadow: [
                                                   BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.12),
-                                                    offset: const Offset(1, 1.5),
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.12,
+                                                        ),
+                                                    offset: const Offset(
+                                                      1,
+                                                      1.5,
+                                                    ),
                                                     blurRadius: 2,
                                                   ),
                                                 ],
@@ -1876,14 +2074,23 @@ class _FolderCard extends StatelessWidget {
                                                   File(entry.imagePath),
                                                   fit: BoxFit.cover,
                                                   cacheWidth: 100,
-                                                  errorBuilder: (ctx, error, stack) => Container(
-                                                    color: Colors.black12,
-                                                    child: Icon(
-                                                      Icons.broken_image_outlined,
-                                                      color: LogbookTheme.faded(false),
-                                                      size: 14,
-                                                    ),
-                                                  ),
+                                                  errorBuilder:
+                                                      (
+                                                        ctx,
+                                                        error,
+                                                        stack,
+                                                      ) => Container(
+                                                        color: Colors.black12,
+                                                        child: Icon(
+                                                          Icons
+                                                              .broken_image_outlined,
+                                                          color:
+                                                              LogbookTheme.faded(
+                                                                false,
+                                                              ),
+                                                          size: 14,
+                                                        ),
+                                                      ),
                                                 ),
                                               ),
                                             ),
@@ -2017,10 +2224,9 @@ class _DottedBorderPainter extends CustomPainter {
 
     final path = Path();
     if (radius > 0) {
-      path.addRRect(RRect.fromRectAndRadius(
-        Offset.zero & size,
-        Radius.circular(radius),
-      ));
+      path.addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
+      );
     } else {
       path.addRect(Offset.zero & size);
     }
@@ -2071,6 +2277,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   bool _loading = true;
   bool _compactMode = false;
   LogbookSortOrder _sortOrder = LogbookSortOrder.dateDescending;
+  final Set<String> _deletingIds = {};
 
   @override
   void initState() {
@@ -2116,17 +2323,28 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     );
     if (!mounted) return;
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => LogDetailScreen(entry: entry, startInEditMode: startInEditMode)),
+      MaterialPageRoute(
+        builder: (_) =>
+            LogDetailScreen(entry: entry, startInEditMode: startInEditMode),
+      ),
     );
     if (changed == true && mounted) _load();
   }
 
-  void _showContextMenu(BuildContext context, LogEntry entry, Offset position, {VoidCallback? onEdit}) async {
+  void _showContextMenu(
+    BuildContext context,
+    LogEntry entry,
+    Offset position, {
+    VoidCallback? onEdit,
+  }) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final paperColor = isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9);
+    final paperColor = isDark
+        ? const Color(0xFF241F18)
+        : const Color(0xFFFBF6E9);
     final inkColor = LogbookTheme.ink(isDark);
 
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
 
     final selected = await showMenu<String>(
       context: context,
@@ -2165,9 +2383,16 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete_outline, color: const Color(0xFFD46A6A), size: 18),
+              Icon(
+                Icons.delete_outline,
+                color: const Color(0xFFD46A6A),
+                size: 18,
+              ),
               const SizedBox(width: 10),
-              Text('Delete Frame', style: caveat(size: 20, color: const Color(0xFFD46A6A))),
+              Text(
+                'Delete Frame',
+                style: caveat(size: 20, color: const Color(0xFFD46A6A)),
+              ),
             ],
           ),
         ),
@@ -2217,7 +2442,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                     style: caveat(size: 22, color: inkColor),
                   ),
                   onTap: () async {
-                    await LogbookStore.instance.moveEntryToFolder(entry.id, null);
+                    await LogbookStore.instance.moveEntryToFolder(
+                      entry.id,
+                      null,
+                    );
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
                     _load();
@@ -2240,7 +2468,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                       ),
                     ),
                     onTap: () async {
-                      await LogbookStore.instance.moveEntryToFolder(entry.id, folder.id);
+                      await LogbookStore.instance.moveEntryToFolder(
+                        entry.id,
+                        folder.id,
+                      );
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx);
                       _load();
@@ -2256,58 +2487,57 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _confirmDelete(LogEntry entry) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete entry?'),
-        content: const Text('This photo and its notes will be removed.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+    final ok = await _showSkeuomorphicConfirmDialog(
+      context,
+      title: 'Delete Entry?',
+      content: 'This photo and its notes will be permanently removed.',
     );
     if (ok == true) {
+      setState(() {
+        _deletingIds.add(entry.id);
+      });
+      await Future.delayed(const Duration(milliseconds: 350));
       await LogbookStore.instance.delete(entry.id);
-      _load();
+      if (mounted) {
+        setState(() {
+          _deletingIds.remove(entry.id);
+        });
+        _load();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     // Theme colors determined by folder custom color or default theme
     final hasCustomColor = widget.folder.colorValue != null;
     final folderGradient = hasCustomColor
         ? folderGradientFor(widget.folder.colorValue!)
         : (isDark
-            ? const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF383127), Color(0xFF2C261E)],
-              )
-            : const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFFDFBF0), Color(0xFFF7F1D5)],
-              ));
-              
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF383127), Color(0xFF2C261E)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFDFBF0), Color(0xFFF7F1D5)],
+                ));
+
     final inkColor = hasCustomColor
         ? folderInkFor(widget.folder.colorValue!)
         : LogbookTheme.ink(isDark);
-        
+
     return Hero(
       tag: 'folder_card_${widget.folder.id}',
       child: Container(
-        decoration: BoxDecoration(
-          gradient: folderGradient,
-        ),
+        decoration: BoxDecoration(gradient: folderGradient),
         child: Scaffold(
-          backgroundColor: Colors.transparent, // Let folderGradient show through
+          backgroundColor:
+              Colors.transparent, // Let folderGradient show through
           body: SafeArea(
             child: Column(
               children: [
@@ -2320,14 +2550,14 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                   actions: [
                     // Sort button
                     PopupMenuButton<LogbookSortOrder>(
-                      icon: Icon(
-                        Icons.sort,
-                        color: inkColor,
-                        size: 22,
-                      ),
-                      color: isDark ? const Color(0xFF241F18) : const Color(0xFFFBF6E9),
+                      icon: Icon(Icons.sort, color: inkColor, size: 22),
+                      color: isDark
+                          ? const Color(0xFF241F18)
+                          : const Color(0xFFFBF6E9),
                       shape: Border.all(
-                        color: LogbookTheme.faded(isDark).withValues(alpha: 0.3),
+                        color: LogbookTheme.faded(
+                          isDark,
+                        ).withValues(alpha: 0.3),
                         width: 1,
                       ),
                       onSelected: (order) {
@@ -2345,7 +2575,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                             style: caveat(
                               size: 20,
                               color: LogbookTheme.ink(isDark),
-                              weight: _sortOrder == LogbookSortOrder.dateDescending ? FontWeight.bold : FontWeight.normal,
+                              weight:
+                                  _sortOrder == LogbookSortOrder.dateDescending
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -2356,7 +2589,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                             style: caveat(
                               size: 20,
                               color: LogbookTheme.ink(isDark),
-                              weight: _sortOrder == LogbookSortOrder.dateAscending ? FontWeight.bold : FontWeight.normal,
+                              weight:
+                                  _sortOrder == LogbookSortOrder.dateAscending
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -2367,7 +2603,9 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                             style: caveat(
                               size: 20,
                               color: LogbookTheme.ink(isDark),
-                              weight: _sortOrder == LogbookSortOrder.titleAZ ? FontWeight.bold : FontWeight.normal,
+                              weight: _sortOrder == LogbookSortOrder.titleAZ
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -2397,9 +2635,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                     ),
                   ],
                 ),
-                Expanded(
-                  child: _buildEntriesList(isDark),
-                ),
+                Expanded(child: _buildEntriesList(isDark)),
               ],
             ),
           ),
@@ -2438,10 +2674,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               Text(
                 'Long press frames in the main list to move them to this archive.',
                 textAlign: TextAlign.center,
-                style: stampStyle(
-                  color: LogbookTheme.faded(isDark),
-                  size: 16,
-                ),
+                style: stampStyle(color: LogbookTheme.faded(isDark), size: 16),
               ),
             ],
           ),
@@ -2465,25 +2698,311 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
         itemBuilder: (context, i) {
           final entry = _sortedEntries[i];
           Offset tapPosition = Offset.zero;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (details) {
-              tapPosition = details.globalPosition;
-            },
-            child: _LogEntryContainer(
-              entry: entry,
-              compactMode: _compactMode,
-              isDark: isDark,
-              onClosed: () {
-                if (mounted) _load();
+          return _DeletingItemAnimator(
+            isDeleting: _deletingIds.contains(entry.id),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) {
+                tapPosition = details.globalPosition;
               },
-              onLongPress: (triggerEdit) {
-                _showContextMenu(context, entry, tapPosition, onEdit: triggerEdit);
-              },
+              child: _LogEntryContainer(
+                entry: entry,
+                compactMode: _compactMode,
+                isDark: isDark,
+                onClosed: () {
+                  if (mounted) _load();
+                },
+                onLongPress: (triggerEdit) {
+                  _showContextMenu(
+                    context,
+                    entry,
+                    tapPosition,
+                    onEdit: triggerEdit,
+                  );
+                },
+              ),
             ),
           );
         },
       ),
     );
   }
+}
+
+class AperturePageRoute<T> extends PageRouteBuilder<T> {
+  final WidgetBuilder builder;
+  final Offset centerOffset;
+
+  AperturePageRoute({required this.builder, required this.centerOffset})
+    : super(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            builder(context),
+        transitionDuration: const Duration(milliseconds: 550),
+        reverseTransitionDuration: const Duration(milliseconds: 500),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curvedAnimation = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeInOutQuart,
+            reverseCurve: Curves.easeInOutQuart,
+          );
+          return AnimatedBuilder(
+            animation: curvedAnimation,
+            builder: (context, child) {
+              return ClipPath(
+                clipper: _ApertureClipper(
+                  progress: curvedAnimation.value,
+                  center: centerOffset,
+                ),
+                child: child,
+              );
+            },
+            child: child,
+          );
+        },
+      );
+}
+
+class _ApertureClipper extends CustomClipper<Path> {
+  final double progress;
+  final Offset center;
+
+  _ApertureClipper({required this.progress, required this.center});
+
+  @override
+  Path getClip(Size size) {
+    final double maxRadius = _calcMaxRadius(size, center);
+    final double radius = maxRadius * progress;
+
+    final Path path = Path()
+      ..addOval(Rect.fromCircle(center: center, radius: radius));
+    return path;
+  }
+
+  double _calcMaxRadius(Size size, Offset center) {
+    final double dx1 = center.dx;
+    final double dy1 = center.dy;
+    final double dx2 = size.width - center.dx;
+    final double dy2 = size.height - center.dy;
+
+    final double d1 = math.sqrt(dx1 * dx1 + dy1 * dy1);
+    final double d2 = math.sqrt(dx2 * dx2 + dy1 * dy1);
+    final double d3 = math.sqrt(dx1 * dx1 + dy2 * dy2);
+    final double d4 = math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+    return math.max(math.max(d1, d2), math.max(d3, d4));
+  }
+
+  @override
+  bool shouldReclip(covariant _ApertureClipper oldClipper) {
+    return oldClipper.progress != progress || oldClipper.center != center;
+  }
+}
+
+// ── Deletion Animation & Confirm Dialog Helpers ─────────────────────────────────
+
+class _DeletingItemAnimator extends StatefulWidget {
+  final Widget child;
+  final bool isDeleting;
+
+  const _DeletingItemAnimator({required this.child, required this.isDeleting});
+
+  @override
+  State<_DeletingItemAnimator> createState() => _DeletingItemAnimatorState();
+}
+
+class _DeletingItemAnimatorState extends State<_DeletingItemAnimator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _scale;
+  late final Animation<double> _sizeFactor;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _opacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
+      ),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.8).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
+      ),
+    );
+    _sizeFactor = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
+      ),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeletingItemAnimator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isDeleting && !oldWidget.isDeleting) {
+      _controller.forward();
+    } else if (!widget.isDeleting && oldWidget.isDeleting) {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        if (_controller.value == 0.0) {
+          return child!;
+        }
+        return SizeTransition(
+          sizeFactor: _sizeFactor,
+          axis: Axis.vertical,
+          child: Opacity(
+            opacity: _opacity.value,
+            child: Transform.scale(scale: _scale.value, child: child!),
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+Future<bool?> _showSkeuomorphicConfirmDialog(
+  BuildContext context, {
+  required String title,
+  required String content,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final paperColor = LogbookTheme.paper(isDark);
+  final inkColor = LogbookTheme.ink(isDark);
+  final fadedInk = LogbookTheme.faded(isDark);
+
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.55),
+    builder: (context) {
+      return Dialog(
+        elevation: 8,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 320,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: paperColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: fadedInk.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Image(
+                    image: skeuomorphicNoise.image,
+                    fit: BoxFit.cover,
+                    opacity: AlwaysStoppedAnimation(isDark ? 0.05 : 0.08),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: caveat(
+                        size: 26,
+                        weight: FontWeight.bold,
+                        color: inkColor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      content,
+                      style: caveat(size: 19, color: fadedInk, height: 1.25),
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            ExposureState.hapticLight();
+                            Navigator.pop(context, false);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: fadedInk.withValues(alpha: 0.3),
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'CANCEL',
+                              style: stampStyle(color: fadedInk, size: 14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            ExposureState.hapticSelection();
+                            Navigator.pop(context, true);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF4A1818)
+                                  : const Color(0xFFFBF0F2),
+                              border: Border.all(
+                                color: Colors.red.withValues(alpha: 0.3),
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'DELETE',
+                              style: stampStyle(color: Colors.red, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }

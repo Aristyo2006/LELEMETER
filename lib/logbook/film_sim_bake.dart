@@ -19,61 +19,215 @@ List<double>? filmSimMatrix(FilmStock? film) {
   if (film.type == FilmType.blackWhite) {
     if (name.contains('tri-x')) {
       return const [
-        0.3, 0.7, 0.1, 0, -20,
-        0.3, 0.7, 0.1, 0, -20,
-        0.3, 0.7, 0.1, 0, -20,
-        0, 0, 0, 1, 0,
+        0.3,
+        0.7,
+        0.1,
+        0,
+        -20,
+        0.3,
+        0.7,
+        0.1,
+        0,
+        -20,
+        0.3,
+        0.7,
+        0.1,
+        0,
+        -20,
+        0,
+        0,
+        0,
+        1,
+        0,
       ];
     }
     return const [
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0, 0, 0, 1, 0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
   if (name.contains('portra')) {
     return const [
-      1.1, 0.0, 0.0, 0, 5,
-      0.0, 1.0, 0.0, 0, 2,
-      0.0, 0.0, 0.95, 0, -2,
-      0, 0, 0, 1, 0,
+      1.1,
+      0.0,
+      0.0,
+      0,
+      5,
+      0.0,
+      1.0,
+      0.0,
+      0,
+      2,
+      0.0,
+      0.0,
+      0.95,
+      0,
+      -2,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   } else if (name.contains('gold')) {
     return const [
-      1.2, 0.0, 0.0, 0, 10,
-      0.0, 1.1, 0.0, 0, 5,
-      0.0, 0.0, 0.8, 0, -10,
-      0, 0, 0, 1, 0,
+      1.2,
+      0.0,
+      0.0,
+      0,
+      10,
+      0.0,
+      1.1,
+      0.0,
+      0,
+      5,
+      0.0,
+      0.0,
+      0.8,
+      0,
+      -10,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   } else if (name.contains('ektar')) {
     return const [
-      1.15, 0.05, 0.05, 0, 0,
-      0.0, 1.15, 0.0, 0, 0,
-      0.0, 0.0, 1.15, 0, 0,
-      0, 0, 0, 1, 0,
+      1.15,
+      0.05,
+      0.05,
+      0,
+      0,
+      0.0,
+      1.15,
+      0.0,
+      0,
+      0,
+      0.0,
+      0.0,
+      1.15,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   } else if (name.contains('velvia')) {
     return const [
-      1.0, 0.0, 0.0, 0, 0,
-      0.1, 1.2, 0.0, 0, 5,
-      0.0, 0.1, 1.2, 0, 5,
-      0, 0, 0, 1, 0,
+      1.0,
+      0.0,
+      0.0,
+      0,
+      0,
+      0.1,
+      1.2,
+      0.0,
+      0,
+      5,
+      0.0,
+      0.1,
+      1.2,
+      0,
+      5,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   } else if (name.contains('cinestill') || name.contains('vision3')) {
     return const [
-      1.0, 0.0, 0.0, 0, 0,
-      0.0, 0.9, 0.2, 0, -5,
-      0.1, 0.0, 1.2, 0, 10,
-      0, 0, 0, 1, 0,
+      1.0,
+      0.0,
+      0.0,
+      0,
+      0,
+      0.0,
+      0.9,
+      0.2,
+      0,
+      -5,
+      0.1,
+      0.0,
+      1.2,
+      0,
+      10,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
   if (film.brand == 'Kodak') {
-    return const [1.1, 0.05, 0, 0, 5, 0, 1.05, 0, 0, 0, 0, 0, 0.9, 0, 0, 0, 0, 0, 1, 0];
+    return const [
+      1.1,
+      0.05,
+      0,
+      0,
+      5,
+      0,
+      1.05,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0.9,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
   } else if (film.brand == 'Fujifilm') {
-    return const [0.95, 0, 0, 0, 0, 0, 1.1, 0.05, 0, 0, 0, 0.05, 1.1, 0, 0, 0, 0, 0, 1, 0];
+    return const [
+      0.95,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1.1,
+      0.05,
+      0,
+      0,
+      0,
+      0.05,
+      1.1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
   }
 
   return null;
@@ -91,12 +245,10 @@ Future<String?> bakeFilmSim({
   List<double>? customLutMatrix,
   int maxLongEdge = 2048,
 }) async {
-  final matrix = customLutMatrix ?? filmSimMatrix(film) ?? const [
-    1, 0, 0, 0, 0,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
-  ];
+  final matrix =
+      customLutMatrix ??
+      filmSimMatrix(film) ??
+      const [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0];
 
   final result = await compute(
     _bakeIsolate,
@@ -118,6 +270,10 @@ String _bakeIsolate(_BakeInput input) {
   var image = img.decodeImage(bytes);
   if (image == null) return input.path; // can't decode → leave as-is
   image = img.bakeOrientation(image);
+  // ignore: avoid_print
+  print(
+    "[BakeIsolate] Original size after orientation bake: ${image.width}x${image.height} (ratio: ${image.width / image.height})",
+  );
 
   // Crop to 3:4 (portrait) or 4:3 (landscape) to match viewfinder
   final isPortrait = image.height > image.width;
@@ -149,7 +305,13 @@ String _bakeIsolate(_BakeInput input) {
   }
 
   if (cropW != image.width || cropH != image.height) {
-    image = img.copyCrop(image, x: cropX, y: cropY, width: cropW, height: cropH);
+    image = img.copyCrop(
+      image,
+      x: cropX,
+      y: cropY,
+      width: cropW,
+      height: cropH,
+    );
   }
 
   // Cap dimensions to keep decode/encode fast and memory bounded.
@@ -176,7 +338,14 @@ String _bakeIsolate(_BakeInput input) {
     final nr = (r0 * r + r1 * g + r2 * b + r3 * px.a + r4).clamp(0, 255);
     final ng = (g0 * r + g1 * g + g2 * b + g3 * px.a + g4).clamp(0, 255);
     final nb = (b0 * r + b1 * g + b2 * b + b3 * px.a + b4).clamp(0, 255);
-    out.setPixelRgba(px.x, px.y, nr.toInt(), ng.toInt(), nb.toInt(), px.a.toInt());
+    out.setPixelRgba(
+      px.x,
+      px.y,
+      nr.toInt(),
+      ng.toInt(),
+      nb.toInt(),
+      px.a.toInt(),
+    );
   }
 
   final encoded = img.encodeJpg(out, quality: 92);

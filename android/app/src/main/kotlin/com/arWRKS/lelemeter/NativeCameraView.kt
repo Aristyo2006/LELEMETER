@@ -61,6 +61,8 @@ class NativeCameraView(
     private var currentShutterNs = 20000000L
 
     // ── Still capture (logbook). Fully isolated from the preview/histogram path. ──
+    private var previewSurface: Surface? = null
+    private var bestPreviewSize: android.util.Size? = null
     private var stillImageReader: ImageReader? = null
     private var stillSession: CameraCaptureSession? = null
     private var captureResultCallback: MethodChannel.Result? = null
@@ -176,18 +178,45 @@ class NativeCameraView(
             val chars = cameraManager.getCameraCharacteristics(cameraId)
             val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
 
-            // Pick a 4:3 preview size from the camera's actual output list.
-            // Using a size from the real list ensures the sensor crop region is
-            // identical to the JPEG capture, eliminating FOV mismatch.
-            val previewSizes = map?.getOutputSizes(SurfaceTexture::class.java)
-            val bestPreviewSize = previewSizes?.filter {
+            val previewSizes = map?.getOutputSizes(SurfaceTexture::class.java) ?: emptyArray()
+            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
+
+            // 1. Find all preview aspect ratios
+            val previewRatios = previewSizes.map { it.width.toDouble() / it.height.toDouble() }
+            
+            // 2. Find JPEG aspect ratios that have a matching preview aspect ratio
+            val matchingJpegSizes = jpegSizes.filter { jpegSize ->
+                val jpegRatio = jpegSize.width.toDouble() / jpegSize.height.toDouble()
+                previewRatios.any { Math.abs(it - jpegRatio) < 0.05 }
+            }
+
+            // 3. Select the best aspect ratio (prefer 4:3 if available, else fallback to 16:9, else absolute fallback)
+            var chosenRatio = 4.0 / 3.0
+            val has43 = matchingJpegSizes.any { Math.abs((it.width.toDouble() / it.height.toDouble()) - (4.0 / 3.0)) < 0.05 }
+            val has169 = matchingJpegSizes.any { Math.abs((it.width.toDouble() / it.height.toDouble()) - (16.0 / 9.0)) < 0.05 }
+            
+            if (!has43) {
+                if (has169) {
+                    chosenRatio = 16.0 / 9.0
+                } else if (matchingJpegSizes.isNotEmpty()) {
+                    val first = matchingJpegSizes[0]
+                    chosenRatio = first.width.toDouble() / first.height.toDouble()
+                }
+            }
+
+            // 4. Find the best preview size matching chosenRatio
+            val bestSize = previewSizes.filter {
                 val ratio = it.width.toDouble() / it.height.toDouble()
-                Math.abs(ratio - (4.0 / 3.0)) < 0.05 && it.width <= 1280
-            }?.maxByOrNull { it.width * it.height }
+                Math.abs(ratio - chosenRatio) < 0.05 && it.width <= 1280
+            }.maxByOrNull { it.width * it.height }
+                ?: previewSizes.filter { it.width <= 1280 }.maxByOrNull { it.width * it.height }
                 ?: android.util.Size(640, 480)
-            texture.setDefaultBufferSize(bestPreviewSize.width, bestPreviewSize.height)
+            bestPreviewSize = bestSize
+
+            texture.setDefaultBufferSize(bestSize.width, bestSize.height)
 
             val surface = Surface(texture)
+            previewSurface = surface
 
             imageReader = ImageReader.newInstance(320, 240, ImageFormat.YUV_420_888, 2)
             imageReader?.setOnImageAvailableListener({ reader ->
@@ -196,14 +225,16 @@ class NativeCameraView(
                 image.close()
             }, backgroundHandler)
 
-            // Setup stillImageReader
-            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
-            val target = jpegSizes?.filter {
+            // 5. Find the best JPEG size matching the same chosenRatio
+            val target = jpegSizes.filter {
                 val ratio = it.width.toDouble() / it.height.toDouble()
-                Math.abs(ratio - (4.0 / 3.0)) < 0.05
-            }?.maxByOrNull { it.width * it.height }
-                ?: jpegSizes?.maxByOrNull { it.width * it.height }
+                Math.abs(ratio - (bestSize.width.toDouble() / bestSize.height.toDouble())) < 0.05
+            }.maxByOrNull { it.width * it.height }
+                ?: jpegSizes.maxByOrNull { it.width * it.height }
                 ?: android.util.Size(1920, 1440)
+
+            android.util.Log.i("NativeCameraView", "bestPreviewSize: ${bestSize.width}x${bestSize.height}, stillSize: ${target.width}x${target.height}")
+
             val maxLong = 1920
             val stillSize = if (maxOf(target.width, target.height) > maxLong) {
                 val scale = maxLong.toDouble() / maxOf(target.width, target.height)
@@ -241,14 +272,24 @@ class NativeCameraView(
         builder.addTarget(Surface(textureView.surfaceTexture))
         imageReader?.surface?.let { builder.addTarget(it) }
 
+        val chars = cameraManager.getCameraCharacteristics(cameraId)
+        applyCameraPreferences(builder, chars)
+    }
+
+    private fun applyCameraPreferences(builder: CaptureRequest.Builder, chars: CameraCharacteristics) {
         builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
         builder.set(CaptureRequest.CONTROL_AE_LOCK, isAELocked)
         builder.set(CaptureRequest.CONTROL_EFFECT_MODE, if (bwMode) CaptureRequest.CONTROL_EFFECT_MODE_MONO else CaptureRequest.CONTROL_EFFECT_MODE_OFF)
+        
+        // Turn OFF stabilization & post-processing for a pure sensor framing
         builder.set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
         builder.set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
-        
-        val chars = cameraManager.getCameraCharacteristics(cameraId)
-        
+        builder.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_OFF)
+        builder.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            builder.set(CaptureRequest.DISTORTION_CORRECTION_MODE, CaptureRequest.DISTORTION_CORRECTION_MODE_OFF)
+        }
+
         // EV Comp
         val aeRange = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
         if (aeRange != null) builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evCompStops.coerceIn(aeRange.lower, aeRange.upper))
@@ -345,43 +386,19 @@ class NativeCameraView(
 
     private fun runStillCapture(chars: CameraCharacteristics) {
         try {
-            val builder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            // Use TEMPLATE_PREVIEW to match preview stream characteristics exactly, avoiding EIS/HDR mismatch crops
+            val builder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             builder.addTarget(stillImageReader!!.surface)
+            previewSurface?.let { builder.addTarget(it) }
 
-            // Explicitly set AE Mode to ON
-            builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-            builder.set(CaptureRequest.CONTROL_AE_LOCK, isAELocked)
-            builder.set(
-                CaptureRequest.CONTROL_EFFECT_MODE,
-                if (bwMode) CaptureRequest.CONTROL_EFFECT_MODE_MONO else CaptureRequest.CONTROL_EFFECT_MODE_OFF,
-            )
+            applyCameraPreferences(builder, chars)
+
             builder.set(CaptureRequest.JPEG_QUALITY, 92.toByte())
 
             // JPEG rotation from sensor orientation (portrait-friendly).
             val orientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
             builder.set(CaptureRequest.JPEG_ORIENTATION, (orientation + 0) % 360)
 
-            // Reuse the same zoom & EV-comp the preview shows.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val zoomRange = chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
-                if (zoomRange != null) {
-                    builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomLevel.coerceIn(zoomRange.lower, zoomRange.upper))
-                } else {
-                    applyCropZoom(builder, chars)
-                }
-            } else {
-                applyCropZoom(builder, chars)
-            }
-            val aeRange = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-            if (aeRange != null) {
-                builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evCompStops.coerceIn(aeRange.lower, aeRange.upper))
-            }
-            val sensorRect = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
-            if (sensorRect != null && meteringX >= 0.0) {
-                val rect = calculateMeteringRect(chars, sensorRect)
-                builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(rect))
-                builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(rect))
-            }
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
 
             captureSession?.capture(builder.build(), null, backgroundHandler)
@@ -492,6 +509,7 @@ class NativeCameraView(
     }
 
     private fun closeCamera() {
+        previewSurface = null
         captureSession?.close(); captureSession = null
         stillSession?.close(); stillSession = null
         stillImageReader?.close(); stillImageReader = null

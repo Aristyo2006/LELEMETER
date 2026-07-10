@@ -12,7 +12,8 @@ import 'logbook_store.dart';
 /// The [LogbookScreen] is pre-warmed in [Offstage] during the cover phase
 /// so images decode & raster cache warms up — zero pop-in on reveal.
 class LogbookCoverScreen extends StatefulWidget {
-  const LogbookCoverScreen({super.key});
+  final bool autoOpenImmediate;
+  const LogbookCoverScreen({super.key, this.autoOpenImmediate = false});
 
   @override
   State<LogbookCoverScreen> createState() => _LogbookCoverScreenState();
@@ -87,10 +88,14 @@ class _LogbookCoverScreenState extends State<LogbookCoverScreen>
     if (!mounted) return;
     setState(() => _showCover = true);
 
-    // Dwell on the cover briefly so the "book" registers, then open.
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    _flip.forward();
+    if (widget.autoOpenImmediate) {
+      _flip.forward();
+    } else {
+      // Dwell on the cover briefly so the "book" registers, then open.
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+      _flip.forward();
+    }
   }
 
   Future<void> _handleBack() async {

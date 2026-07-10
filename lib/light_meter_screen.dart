@@ -1419,8 +1419,12 @@ class LightMeterScreen extends StatelessWidget {
                 ExposureState.hapticLight();
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const SettingsScreen(),
+                  PageTransition(
+                    type: PageTransitionType.rightToLeft,
+                    child: const SettingsScreen(),
+                    curve: Curves.easeInOut,
+                    duration: const Duration(milliseconds: 350),
+                    reverseDuration: const Duration(milliseconds: 300),
                   ),
                 );
               },

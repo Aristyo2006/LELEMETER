@@ -1,14 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:page_transition/page_transition.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import '../exposure_state.dart';
 import '../film_database.dart';
 import 'film_sim_bake.dart';
-import 'logbook_screen.dart';
+import 'logbook_cover_screen.dart';
 import 'logbook_store.dart';
 import 'logbook_theme.dart';
+import 'developing_photo.dart';
 
 /// The exposure data handed over from the viewfinder at capture time.
 /// Snapshot — never references live state.
@@ -208,7 +210,13 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
       if (!mounted) return;
       // Replace the stack so back from the Logbook returns to the meter.
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LogbookScreen()),
+        PageTransition(
+          type: PageTransitionType.rightToLeft,
+          child: const LogbookCoverScreen(autoOpenImmediate: true),
+          curve: Curves.easeInOut,
+          duration: const Duration(milliseconds: 350),
+          reverseDuration: const Duration(milliseconds: 300),
+        ),
         (route) => route.isFirst,
       );
     } catch (e) {
@@ -301,20 +309,9 @@ class _LogCreatorScreenState extends State<LogCreatorScreen> {
                                     1,
                                     0,
                                   ]),
-                            child: Image.file(
-                              File(widget.imagePath),
+                            child: DevelopingPhoto(
+                              imagePath: widget.imagePath,
                               fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              cacheWidth: 900,
-                              errorBuilder: (ctx, error, stackTrace) =>
-                                  Container(
-                                    color: Colors.black12,
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      size: 48,
-                                      color: LogbookTheme.faded(isDark),
-                                    ),
-                                  ),
                             ),
                           ),
                         ),
