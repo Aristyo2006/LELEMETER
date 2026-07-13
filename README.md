@@ -38,8 +38,6 @@ Screenshots
   * Aperture (f-stop) selection
 * 📊 Exposure Value (**EV**) calculation
 * ⚡ Real-time light measurement updates
-* 📱 Toggleable Simple and Dial UI
-
 ---
 
 ## 🧠 How It Works
@@ -64,6 +62,7 @@ This allows the app to estimate proper exposure settings based on measured light
 
 * **Flutter**
 * **Dart**
+* **Kotlin**
 * Android **Ambient Light Sensor API**
 
 ---
